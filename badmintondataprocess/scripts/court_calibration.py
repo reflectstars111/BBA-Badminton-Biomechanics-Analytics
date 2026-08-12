@@ -152,6 +152,35 @@ def draw_preview(frame: np.ndarray, corners: np.ndarray) -> np.ndarray:
     return preview
 
 
+def normalized_corners(
+    frame_shape: tuple[int, int, int],
+    points: list[float] | list[list[float]] | tuple[tuple[float, float], ...],
+) -> np.ndarray:
+    height, width = frame_shape[:2]
+    corners = np.asarray(points, dtype=np.float32)
+    if corners.size == 8:
+        corners = corners.reshape(4, 2)
+    if corners.shape != (4, 2):
+        raise ValueError('Reference court points must contain four x,y pairs')
+    if np.any(corners < 0.0) or np.any(corners > 1.0):
+        raise ValueError('Reference court points must be normalized from 0 to 1')
+    corners[:, 0] *= width
+    corners[:, 1] *= height
+    return corners
+
+
+def court_line_support(frame: np.ndarray, corners: np.ndarray, line_width: int = 9) -> float:
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    white = ((hsv[..., 1] < 95) & (hsv[..., 2] > 135)).astype(np.uint8)
+    scores: list[float] = []
+    integer_corners = corners.astype(np.int32)
+    for start, end in zip(integer_corners, np.roll(integer_corners, -1, axis=0)):
+        band = np.zeros(white.shape, dtype=np.uint8)
+        cv2.line(band, tuple(start), tuple(end), 255, line_width)
+        scores.append(float(np.mean(white[band > 0])))
+    return float(np.mean(scores))
+
+
 def save_calibration(
     video_path: Path,
     frame_index: int,
@@ -175,7 +204,13 @@ def save_calibration(
     output_json.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
 
 
-def calibrate_video(video_path: Path, output_dir: Path, preview_dir: Path) -> dict[str, object]:
+def calibrate_video(
+    video_path: Path,
+    output_dir: Path,
+    preview_dir: Path,
+    reference_points: list[float] | list[list[float]] | None = None,
+    min_line_support: float = 0.15,
+) -> dict[str, object]:
     require_opencv()
     capture = cv2.VideoCapture(str(video_path))
     if not capture.isOpened():
@@ -190,25 +225,36 @@ def calibrate_video(video_path: Path, output_dir: Path, preview_dir: Path) -> di
         }
 
     try:
-        frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
-        candidate_indices = representative_frame_indices(frame_count)
-        last_error: str | None = None
-        frame = None
-        frame_index = -1
-        corners = None
-        for candidate_index in candidate_indices:
-            try:
-                candidate_frame = read_frame_at(capture, candidate_index)
-                candidate_corners = detect_court_corners(candidate_frame)
-                frame = candidate_frame
-                frame_index = candidate_index
-                corners = candidate_corners
-                break
-            except Exception as exc:  # pragma: no cover - runtime dependent
-                last_error = str(exc)
-                continue
-        if frame is None or corners is None:
-            raise RuntimeError(last_error or 'Failed to detect court corners')
+        if reference_points is not None:
+            frame, frame_index = representative_frame(capture)
+            corners = normalized_corners(frame.shape, reference_points)
+            support = court_line_support(frame, corners)
+            if support < min_line_support:
+                raise RuntimeError(
+                    f'reference court line support {support:.3f} < {min_line_support:.3f}'
+                )
+            message = f'reference calibration; line support={support:.3f}'
+        else:
+            frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+            candidate_indices = representative_frame_indices(frame_count)
+            last_error: str | None = None
+            frame = None
+            frame_index = -1
+            corners = None
+            for candidate_index in candidate_indices:
+                try:
+                    candidate_frame = read_frame_at(capture, candidate_index)
+                    candidate_corners = detect_court_corners(candidate_frame)
+                    frame = candidate_frame
+                    frame_index = candidate_index
+                    corners = candidate_corners
+                    break
+                except Exception as exc:  # pragma: no cover - runtime dependent
+                    last_error = str(exc)
+                    continue
+            if frame is None or corners is None:
+                raise RuntimeError(last_error or 'Failed to detect court corners')
+            message = 'automatic contour calibration'
         output_json = output_dir / f'{video_path.stem}.json'
         output_preview = preview_dir / f'{video_path.stem}.png'
         save_calibration(video_path, frame_index, frame.shape, corners, output_json, output_preview)
@@ -221,7 +267,7 @@ def calibrate_video(video_path: Path, output_dir: Path, preview_dir: Path) -> di
             'frame_index': frame_index,
             'json_path': str(output_json),
             'preview_path': str(output_preview),
-            'message': 'ok',
+            'message': message,
         }
     except Exception as exc:  # pragma: no cover - runtime dependent
         return {
@@ -237,12 +283,28 @@ def calibrate_video(video_path: Path, output_dir: Path, preview_dir: Path) -> di
         capture.release()
 
 
-def calibrate_courts(input_path: Path, output_dir: Path, preview_dir: Path, summary_csv: Path) -> int:
+def calibrate_courts(
+    input_path: Path,
+    output_dir: Path,
+    preview_dir: Path,
+    summary_csv: Path,
+    reference_points: list[float] | list[list[float]] | None = None,
+    min_line_support: float = 0.15,
+) -> int:
     videos = iter_video_paths(input_path)
     output_dir = ensure_dir(output_dir)
     preview_dir = ensure_dir(preview_dir)
 
-    rows = [calibrate_video(video_path, output_dir, preview_dir) for video_path in videos]
+    rows = [
+        calibrate_video(
+            video_path,
+            output_dir,
+            preview_dir,
+            reference_points=reference_points,
+            min_line_support=min_line_support,
+        )
+        for video_path in videos
+    ]
     write_csv_rows(summary_csv, COURT_FIELDNAMES, rows)
 
     success_count = sum(row['status'] == 'success' for row in rows)
@@ -277,7 +339,22 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path('annotations/court_calibration_summary.csv'),
         help='Summary CSV describing calibration success for each video.',
     )
+    parser.add_argument(
+        '--reference-points',
+        default=None,
+        help='Normalized TL,TR,BR,BL points as x,y;x,y;x,y;x,y.',
+    )
+    parser.add_argument('--min-line-support', type=float, default=0.15)
     return parser
+
+
+def parse_reference_points(value: str | None) -> list[list[float]] | None:
+    if value is None:
+        return None
+    points = [[float(item) for item in pair.split(',')] for pair in value.split(';')]
+    if len(points) != 4 or any(len(point) != 2 for point in points):
+        raise SystemExit('--reference-points must be x,y;x,y;x,y;x,y')
+    return points
 
 
 def main() -> int:
@@ -287,6 +364,8 @@ def main() -> int:
         output_dir=args.output_dir,
         preview_dir=args.preview_dir,
         summary_csv=args.summary_csv,
+        reference_points=parse_reference_points(args.reference_points),
+        min_line_support=args.min_line_support,
     )
 
 

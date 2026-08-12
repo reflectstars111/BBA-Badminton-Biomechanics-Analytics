@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import cv2
+import numpy as np
+
+from badminton_data_process.calibration.court import court_line_support
 from badminton_data_process.calibration.geometry import project_point
 from badminton_data_process.preprocess.timeline import smooth_main_view_segments
 from badminton_data_process.rally.segmentation import (
@@ -15,6 +19,18 @@ def test_project_point_identity_homography() -> None:
     )
     assert x == 12.5
     assert y == 7.25
+
+
+def test_reference_court_rejects_misaligned_camera_view() -> None:
+    frame = np.zeros((100, 100, 3), dtype=np.uint8)
+    corners = np.array([[20, 20], [80, 20], [80, 80], [20, 80]], dtype=np.float32)
+    cv2.polylines(frame, [corners.astype(np.int32)], True, (255, 255, 255), 3)
+
+    aligned = court_line_support(frame, corners)
+    shifted = court_line_support(frame, corners + np.array([10, 10], dtype=np.float32))
+
+    assert aligned > 0.2
+    assert aligned > shifted * 3
 
 
 def test_smooth_main_view_segments_filters_and_bridges_short_gap() -> None:

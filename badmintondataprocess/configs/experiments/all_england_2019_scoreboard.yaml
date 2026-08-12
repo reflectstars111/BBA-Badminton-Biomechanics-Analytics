@@ -13,3 +13,15 @@ rally_segmentation:
     - 0.2758
     - 0.1125
   scoreboard_max_lag_seconds: 8.0
+
+court_calibration:
+  reference_points:
+    - 0.3134
+    - 0.5333
+    - 0.6866
+    - 0.5333
+    - 0.7887
+    - 0.9396
+    - 0.2089
+    - 0.9417
+  min_line_support: 0.15

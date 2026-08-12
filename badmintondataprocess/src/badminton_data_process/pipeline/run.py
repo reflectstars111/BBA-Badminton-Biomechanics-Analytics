@@ -103,7 +103,15 @@ def run_pipeline(
         outputs=[str(calibration_dir), str(calibration_summary_csv)],
         parameters=config.get("court_calibration", {}),
     ):
-        calibrate_courts(rallies_csv, calibration_dir, calibration_preview_dir, calibration_summary_csv)
+        calibration_cfg = config.get("court_calibration", {})
+        calibrate_courts(
+            rallies_csv,
+            calibration_dir,
+            calibration_preview_dir,
+            calibration_summary_csv,
+            reference_points=calibration_cfg.get("reference_points"),
+            min_line_support=float(calibration_cfg.get("min_line_support", 0.15)),
+        )
     if stop_after == "calibrate":
         context.write_manifest()
         return run_dir

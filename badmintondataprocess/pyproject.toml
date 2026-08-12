@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "badminton-data-process"
+version = "0.1.0"
+description = "Broadcast badminton video preprocessing, tracking, and tactical analysis pipeline."
+readme = "md_summary/README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.24",
+  "opencv-python>=4.8",
+  "yt-dlp>=2025.1.15",
+  "imageio-ffmpeg>=0.6",
+  "scipy>=1.11",
+  "ultralytics>=8.3",
+  "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+yaml = ["PyYAML>=6.0"]
+
+[project.scripts]
+bdp = "badminton_data_process.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
+

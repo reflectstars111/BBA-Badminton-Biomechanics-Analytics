@@ -1,0 +1,18 @@
+rally_segmentation:
+  sample_every: 10
+  min_rally_seconds: 1.0
+  max_rally_seconds: 12.0
+  max_gap_seconds: 1.5
+  min_motion_score: 0.005
+  max_motion_score: 0.30
+  min_center_green_ratio: 0.10
+  min_bottom_green_ratio: 0.10
+  min_line_ratio: 0.02
+  min_top_green_ratio: 0.0
+  min_middle_green_ratio: 0.05
+  min_top_dark_ratio: 0.0
+  min_middle_edge_ratio: 0.02
+
+player_tracking:
+  detector: heuristic
+

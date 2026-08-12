@@ -15,6 +15,16 @@ env/
 results/
 *.log
 
+# Badminton data-process local datasets and experiment artifacts
+badmintondataprocess/raw_videos/
+badmintondataprocess/rallies*/
+badmintondataprocess/annotations/
+badmintondataprocess/outputs/
+badmintondataprocess/runs/
+badmintondataprocess/metadata/*.csv
+badmintondataprocess/metadata/*.json
+badmintondataprocess/*cookies*.txt
+
 # Model weights are intentionally not published
 weights/*
 !weights/.gitkeep

@@ -1,0 +1,2 @@
+"""Trajectory interpolation and smoothing."""
+

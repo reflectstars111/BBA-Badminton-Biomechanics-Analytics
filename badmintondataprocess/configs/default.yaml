@@ -1,0 +1,102 @@
+project_name: badminton_data_process
+version: 0.1.0
+
+data:
+  raw_videos_dir: raw_videos
+  rallies_dir: rallies
+  metadata_dir: metadata
+  annotations_dir: annotations
+  outputs_dir: outputs
+  runs_dir: runs
+
+video:
+  default_fps: 30
+  preferred_resolution: 1080p
+  allowed_extensions:
+    - .mp4
+    - .mkv
+    - .mov
+
+rally_segmentation:
+  output_dir: rallies
+  metadata_csv: metadata/rallies.csv
+  sample_every: 15
+  min_rally_seconds: 4.0
+  max_rally_seconds: 45.0
+  max_gap_seconds: 3.0
+  min_motion_score: 0.01
+  max_motion_score: 0.16
+  min_center_green_ratio: 0.22
+  min_bottom_green_ratio: 0.36
+  min_line_ratio: 0.09
+  min_top_green_ratio: 0.05
+  min_middle_green_ratio: 0.20
+  max_left_right_green_diff: 0.16
+  min_top_dark_ratio: 0.80
+  min_middle_edge_ratio: 0.16
+  pad_before_seconds: 0.4
+  pad_after_seconds: 0.6
+  max_pre_context_seconds: 2.2
+  max_post_context_seconds: 1.4
+  allowed_context_drop_samples: 1
+  enable_manual_review: true
+
+main_view:
+  sample_every: 30
+  threshold: 0.75
+  min_segment_seconds: 3.0
+  max_gap_seconds: 2.0
+  posthoc_min_quality_score: 0.75
+
+court_calibration:
+  court_type: singles
+  output_dir: annotations/court_calibration
+  preview_dir: outputs/court_calibration_debug
+  summary_csv: annotations/court_calibration_summary.csv
+  save_homography: true
+
+player_tracking:
+  calibration_dir: annotations/court_calibration
+  output: annotations/player_tracks.csv
+  summary_csv: annotations/player_tracking_summary.csv
+  debug_dir: outputs/player_tracking_debug
+  detector: heuristic
+  tracker: role_association
+  pose_model: none
+  use_ankle_midpoint: false
+  yolo_model: yolov8n.pt
+  yolo_confidence: 0.12
+  yolo_image_size: 1280
+  near_max_track_distance: 120.0
+  far_max_track_distance: 170.0
+  near_max_missing_frames: 4
+  far_max_missing_frames: 10
+  role_half_tolerance: 48.0
+
+shuttle_tracking:
+  calibration_dir: annotations/court_calibration
+  output: annotations/shuttle_tracks.csv
+  summary_csv: annotations/shuttle_tracking_summary.csv
+  debug_dir: outputs/shuttle_tracking_debug
+  model: motion_bright_baseline
+  future_model_interface: tracknet
+  diff_threshold: 18
+  max_jump: 80.0
+  max_missing_frames: 3
+  min_brightness: 165
+  min_candidate_area: 1.0
+  max_candidate_area: 55.0
+  max_candidate_size: 14
+  direction_weight: 24.0
+  speed_weight: 0.35
+
+smoothing:
+  min_confidence: 0.2
+  max_gap_frames: 4
+  window_size: 5
+  ema_alpha: 0.35
+
+outputs:
+  save_debug_video: true
+  save_csv: true
+  save_heatmap: true

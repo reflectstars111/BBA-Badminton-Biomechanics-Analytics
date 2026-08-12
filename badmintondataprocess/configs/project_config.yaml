@@ -1,0 +1,41 @@
+project_name: badminton_data_process
+version: 0.1.0
+
+data:
+  raw_videos_dir: raw_videos
+  rallies_dir: rallies
+  metadata_dir: metadata
+  annotations_dir: annotations
+  outputs_dir: outputs
+
+video:
+  default_fps: 30
+  preferred_resolution: 1080p
+  allowed_extensions:
+    - .mp4
+    - .mkv
+
+rally_segmentation:
+  min_rally_seconds: 3.0
+  max_gap_seconds: 8.0
+  enable_manual_review: true
+
+court_calibration:
+  court_type: singles
+  save_homography: true
+
+player_tracking:
+  detector: yolo
+  tracker: bytetrack
+  pose_model: rtmpose
+  use_ankle_midpoint: true
+
+shuttle_tracking:
+  model: tracknetv4
+  smoothing: kalman_spline
+  confidence_threshold: 0.2
+
+outputs:
+  save_debug_video: true
+  save_csv: true
+  save_heatmap: true

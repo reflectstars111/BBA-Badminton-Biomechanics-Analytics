@@ -25,6 +25,10 @@ def merge_candidate_segments(*args, **kwargs):
     return _module().merge_candidate_segments(*args, **kwargs)
 
 
+def select_live_rallies(*args, **kwargs):
+    return _module().select_live_rallies(*args, **kwargs)
+
+
 def segment_rallies(*args, **kwargs):
     return _module().segment_rallies(*args, **kwargs)
 

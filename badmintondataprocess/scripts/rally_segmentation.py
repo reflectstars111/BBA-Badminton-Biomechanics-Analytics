@@ -111,15 +111,21 @@ def analyze_video(
             motion_score = float(np.mean(frame_diff)) / 255.0
 
         metrics = frame_metrics(frame)
-        is_court_view = (
+        # Rally boundaries follow the stable full-court broadcast view. Edge
+        # density is useful as a confidence signal, but is too brittle to be
+        # a boundary signal when small, fast players blur the court lines.
+        is_rally_view = (
             metrics['center_green_ratio'] >= min_center_green_ratio
             and metrics['bottom_green_ratio'] >= min_bottom_green_ratio
-            and metrics['line_ratio'] >= min_line_ratio
             and metrics['top_green_ratio'] >= min_top_green_ratio
             and metrics['middle_green_ratio'] >= min_middle_green_ratio
             and abs(metrics['left_green_ratio'] - metrics['right_green_ratio'])
             <= max_left_right_green_diff
             and metrics['top_dark_ratio'] >= min_top_dark_ratio
+        )
+        is_court_view = (
+            is_rally_view
+            and metrics['line_ratio'] >= min_line_ratio
             and metrics['middle_edge_ratio'] >= min_middle_edge_ratio
         )
         is_candidate = (
@@ -142,6 +148,7 @@ def analyze_video(
                 'right_green_ratio': metrics['right_green_ratio'],
                 'top_dark_ratio': metrics['top_dark_ratio'],
                 'middle_edge_ratio': metrics['middle_edge_ratio'],
+                'is_rally_view': float(is_rally_view),
                 'is_court_view': float(is_court_view),
                 'is_candidate': float(is_candidate),
             }
@@ -170,113 +177,155 @@ def merge_candidate_segments(
     max_post_context_seconds: float,
     allowed_context_drop_samples: int,
 ) -> list[tuple[int, int]]:
-    sample_segments: list[tuple[int, int]] = []
+    if not analysis_rows:
+        return []
+
+    # A rally is bounded by the continuous full-court broadcast shot. Motion
+    # is deliberately not used for boundaries: players occupy too few pixels
+    # in a wide shot, so whole-frame differences go quiet during real play.
+    view_segments: list[tuple[int, int]] = []
     start_frame: int | None = None
-    end_frame: int | None = None
+    last_view_frame: int | None = None
+    drop_count = 0
 
     for row in analysis_rows:
         frame_id = int(row['sample_frame'])
-        is_candidate = bool(row['is_candidate'])
-        if is_candidate:
+        is_rally_view = bool(row.get('is_rally_view', row['is_court_view']))
+        if is_rally_view:
             if start_frame is None:
                 start_frame = frame_id
-            end_frame = frame_id
-        elif start_frame is not None and end_frame is not None:
-            sample_segments.append((start_frame, end_frame))
-            start_frame = None
-            end_frame = None
+            last_view_frame = frame_id
+            drop_count = 0
+        elif start_frame is not None and last_view_frame is not None:
+            drop_count += 1
+            if drop_count > allowed_context_drop_samples:
+                view_segments.append((start_frame, last_view_frame + sample_every))
+                start_frame = None
+                last_view_frame = None
+                drop_count = 0
 
-    if start_frame is not None and end_frame is not None:
-        sample_segments.append((start_frame, end_frame))
+    if start_frame is not None and last_view_frame is not None:
+        view_segments.append((start_frame, last_view_frame + sample_every))
 
-    merged_segments: list[tuple[int, int]] = []
-    max_gap_frames = int(max_gap_seconds * fps)
     min_rally_frames = int(min_rally_seconds * fps)
     max_rally_frames = int(max_rally_seconds * fps)
     pad_before_frames = int(pad_before_seconds * fps)
     pad_after_frames = int(pad_after_seconds * fps)
 
-    for start, end in sample_segments:
-        actual_start = start
-        actual_end = end + sample_every
-        if not merged_segments:
-            merged_segments.append((actual_start, actual_end))
-            continue
-
-        previous_start, previous_end = merged_segments[-1]
-        if actual_start - previous_end <= max_gap_frames:
-            merged_segments[-1] = (previous_start, actual_end)
-        else:
-            merged_segments.append((actual_start, actual_end))
-
-    if not merged_segments:
-        return []
-
-    sample_frames = [int(row['sample_frame']) for row in analysis_rows]
-    court_flags = [bool(row['is_court_view']) for row in analysis_rows]
-    max_pre_context_frames = int(max_pre_context_seconds * fps)
-    max_post_context_frames = int(max_post_context_seconds * fps)
-
-    expanded_segments: list[tuple[int, int]] = []
-    for start, end in merged_segments:
-        start_index = 0
-        end_index = len(sample_frames) - 1
-        for index, frame_id in enumerate(sample_frames):
-            if frame_id <= start:
-                start_index = index
-            if frame_id <= end:
-                end_index = index
-
-        expanded_start = start
-        expanded_end = end
-
-        drop_count = 0
-        index = start_index - 1
-        while index >= 0:
-            frame_id = sample_frames[index]
-            if start - frame_id > max_pre_context_frames:
-                break
-            if court_flags[index]:
-                expanded_start = frame_id
-                drop_count = 0
-            else:
-                drop_count += 1
-                if drop_count > allowed_context_drop_samples:
-                    break
-            index -= 1
-
-        drop_count = 0
-        index = end_index + 1
-        while index < len(sample_frames):
-            frame_id = sample_frames[index]
-            if frame_id - end > max_post_context_frames:
-                break
-            if court_flags[index]:
-                expanded_end = frame_id + sample_every
-                drop_count = 0
-            else:
-                drop_count += 1
-                if drop_count > allowed_context_drop_samples:
-                    break
-            index += 1
-
-        expanded_start = max(0, expanded_start - pad_before_frames)
-        expanded_end = expanded_end + pad_after_frames
-        if not expanded_segments:
-            expanded_segments.append((expanded_start, expanded_end))
-            continue
-
-        previous_start, previous_end = expanded_segments[-1]
-        if expanded_start - previous_end <= max_gap_frames:
-            expanded_segments[-1] = (previous_start, max(previous_end, expanded_end))
-        else:
-            expanded_segments.append((expanded_start, expanded_end))
-
     return [
-        (start, end)
-        for start, end in expanded_segments
+        (max(0, start - pad_before_frames), end + pad_after_frames)
+        for start, end in view_segments
         if min_rally_frames <= end - start <= max_rally_frames
     ]
+
+
+def _crop_normalized(frame: np.ndarray, roi: tuple[float, float, float, float]) -> np.ndarray:
+    height, width = frame.shape[:2]
+    x, y, roi_width, roi_height = roi
+    x1 = max(0, min(width - 1, int(round(x * width))))
+    y1 = max(0, min(height - 1, int(round(y * height))))
+    x2 = max(x1 + 1, min(width, int(round((x + roi_width) * width))))
+    y2 = max(y1 + 1, min(height, int(round((y + roi_height) * height))))
+    return frame[y1:y2, x1:x2]
+
+
+def detect_score_changes(
+    input_path: Path,
+    score_roi: tuple[float, float, float, float],
+    context_roi: tuple[float, float, float, float],
+) -> list[int]:
+    """Detect persistent scoreboard-state changes without OCR."""
+    require_opencv()
+    capture = cv2.VideoCapture(str(input_path))
+    if not capture.isOpened():
+        raise RuntimeError(f'Cannot open video: {input_path}')
+
+    fps = capture.get(cv2.CAP_PROP_FPS) or 30.0
+    sample_every = max(1, int(round(fps / 2.0)))
+    observations: list[tuple[int, np.ndarray]] = []
+    frame_index = 0
+    while True:
+        ok, frame = capture.read()
+        if not ok:
+            break
+        if frame_index % sample_every == 0:
+            context = _crop_normalized(frame, context_roi)
+            hsv = cv2.cvtColor(context, cv2.COLOR_BGR2HSV)
+            presence = float(np.mean((hsv[..., 1] < 90) & (hsv[..., 2] > 75)))
+            if 0.35 <= presence <= 0.43:
+                score = _crop_normalized(frame, score_roi)
+                gray = cv2.cvtColor(score, cv2.COLOR_BGR2GRAY)
+                resized = cv2.resize(gray, (54, 82), interpolation=cv2.INTER_AREA)
+                observations.append((frame_index, (resized > 120).astype(np.uint8)))
+        frame_index += 1
+    capture.release()
+
+    reference: np.ndarray | None = None
+    recent: list[tuple[int, np.ndarray]] = []
+    changes: list[int] = []
+    for frame_id, fingerprint in observations:
+        recent.append((frame_id, fingerprint))
+        recent = recent[-3:]
+        if len(recent) < 3 or recent[-1][0] - recent[0][0] > int(2.0 * fps):
+            continue
+        candidate = (
+            np.median(np.stack([item[1] for item in recent]), axis=0) >= 0.5
+        ).astype(np.uint8)
+        stable_difference = max(
+            float(np.mean(candidate != item[1])) for item in recent
+        )
+        if stable_difference > 0.008:
+            continue
+        if reference is None:
+            reference = candidate
+            continue
+        change = float(np.mean(reference != candidate))
+        # A normal one-point update changes only a small digit region. Larger
+        # jumps are layout/final-result transitions: adopt the new layout as
+        # the baseline without emitting a point.
+        if change >= 0.05:
+            reference = candidate
+            recent = []
+        elif change > 0.014:
+            reference = candidate
+            changes.append(recent[1][0])
+            recent = []
+    return changes
+
+
+def select_live_rallies(
+    view_segments: list[tuple[int, int]],
+    score_change_frames: list[int],
+    fps: float,
+    max_score_lag_seconds: float = 8.0,
+) -> list[tuple[int, int]]:
+    """Keep the final full-court shot before each score update."""
+    max_lag_frames = int(max_score_lag_seconds * fps)
+    end_tolerance = int(2.0 * fps)
+    selected: list[tuple[int, int]] = []
+    for score_frame in score_change_frames:
+        candidates = [
+            segment
+            for segment in view_segments
+            if segment[0] <= score_frame
+            and segment[1] <= score_frame + end_tolerance
+            and score_frame - segment[1] <= max_lag_frames
+        ]
+        if not candidates:
+            continue
+        segment = max(candidates, key=lambda item: item[1])
+        if not selected or segment != selected[-1]:
+            selected.append(segment)
+    return selected
+
+
+def parse_normalized_roi(value: str) -> tuple[float, float, float, float]:
+    parts = tuple(float(item.strip()) for item in value.split(','))
+    if len(parts) != 4 or any(item < 0.0 or item > 1.0 for item in parts):
+        raise argparse.ArgumentTypeError('ROI must be x,y,width,height with values from 0 to 1')
+    if parts[2] <= 0.0 or parts[3] <= 0.0 or parts[0] + parts[2] > 1.0 or parts[1] + parts[3] > 1.0:
+        raise argparse.ArgumentTypeError('ROI must fit inside the normalized frame')
+    return parts
 
 
 def write_analysis_csv(metadata_csv: Path, analysis_rows: list[dict[str, float]]) -> Path:
@@ -295,6 +344,7 @@ def write_analysis_csv(metadata_csv: Path, analysis_rows: list[dict[str, float]]
         'right_green_ratio',
         'top_dark_ratio',
         'middle_edge_ratio',
+        'is_rally_view',
         'is_court_view',
         'is_candidate',
     ]
@@ -319,6 +369,7 @@ def write_rally_clips(
     segments: list[tuple[int, int]],
     fps: float,
     match_id: str,
+    notes: str = 'auto-generated candidate segment',
 ) -> list[dict[str, object]]:
     require_opencv()
     if not segments:
@@ -358,7 +409,7 @@ def write_rally_clips(
                 'end_time': round(end_frame / fps, 3),
                 'duration_seconds': round((end_frame - start_frame) / fps, 3),
                 'output_path': str(output_path),
-                'notes': 'auto-generated candidate segment',
+                'notes': notes,
             }
         )
 
@@ -390,6 +441,9 @@ def segment_rallies(
     max_post_context_seconds: float,
     allowed_context_drop_samples: int,
     overwrite: bool,
+    scoreboard_score_roi: tuple[float, float, float, float] | None = None,
+    scoreboard_context_roi: tuple[float, float, float, float] | None = None,
+    scoreboard_max_lag_seconds: float = 8.0,
 ) -> int:
     analysis_rows, fps, _, _ = analyze_video(
         input_path,
@@ -418,6 +472,21 @@ def segment_rallies(
         max_post_context_seconds=max_post_context_seconds,
         allowed_context_drop_samples=allowed_context_drop_samples,
     )
+    notes = 'full-court view candidate'
+    score_changes: list[int] = []
+    if scoreboard_score_roi is not None and scoreboard_context_roi is not None:
+        score_changes = detect_score_changes(
+            input_path,
+            scoreboard_score_roi,
+            scoreboard_context_roi,
+        )
+        segments = select_live_rallies(
+            segments,
+            score_changes,
+            fps,
+            max_score_lag_seconds=scoreboard_max_lag_seconds,
+        )
+        notes = 'live rally selected before scoreboard update'
 
     match_id = extract_match_id(input_path)
     output_dir = ensure_dir(output_dir)
@@ -425,7 +494,7 @@ def segment_rallies(
         removed = remove_previous_outputs(output_dir, match_id)
         if removed:
             print(f'Removed previous clips: {removed}')
-    rally_rows = write_rally_clips(input_path, output_dir, segments, fps, match_id)
+    rally_rows = write_rally_clips(input_path, output_dir, segments, fps, match_id, notes=notes)
     analysis_csv = write_analysis_csv(metadata_csv, analysis_rows)
     fieldnames = [
         'match_id',
@@ -443,6 +512,8 @@ def segment_rallies(
     print(f'Video: {input_path}')
     print(f'FPS: {fps:.3f}')
     print(f'Sampled frames: {len(analysis_rows)}')
+    if score_changes:
+        print(f'Score changes: {len(score_changes)}')
     print(f'Candidate rallies: {len(rally_rows)}')
     print(f'Rally metadata saved to: {metadata_csv}')
     print(f'Analysis metrics saved to: {analysis_csv}')
@@ -468,13 +539,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         '--min-rally-seconds',
         type=float,
-        default=4.0,
+        default=1.0,
         help='Minimum duration for a candidate rally.',
     )
     parser.add_argument(
         '--max-rally-seconds',
         type=float,
-        default=45.0,
+        default=120.0,
         help='Maximum duration for a candidate rally.',
     )
     parser.add_argument(
@@ -578,6 +649,19 @@ def build_parser() -> argparse.ArgumentParser:
         action='store_true',
         help='Delete previously generated clips for the same match before writing new ones.',
     )
+    parser.add_argument(
+        '--scoreboard-score-roi',
+        type=parse_normalized_roi,
+        default=None,
+        help='Normalized x,y,width,height for the current-game score cells.',
+    )
+    parser.add_argument(
+        '--scoreboard-context-roi',
+        type=parse_normalized_roi,
+        default=None,
+        help='Normalized x,y,width,height for scoreboard presence detection.',
+    )
+    parser.add_argument('--scoreboard-max-lag-seconds', type=float, default=8.0)
     return parser
 
 
@@ -620,6 +704,9 @@ def main() -> int:
         max_post_context_seconds=args.max_post_context_seconds,
         allowed_context_drop_samples=args.allowed_context_drop_samples,
         overwrite=args.overwrite,
+        scoreboard_score_roi=args.scoreboard_score_roi,
+        scoreboard_context_roi=args.scoreboard_context_roi,
+        scoreboard_max_lag_seconds=args.scoreboard_max_lag_seconds,
     )
 
 

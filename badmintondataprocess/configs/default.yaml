@@ -21,8 +21,8 @@ rally_segmentation:
   output_dir: rallies
   metadata_csv: metadata/rallies.csv
   sample_every: 15
-  min_rally_seconds: 4.0
-  max_rally_seconds: 45.0
+  min_rally_seconds: 1.0
+  max_rally_seconds: 120.0
   max_gap_seconds: 3.0
   min_motion_score: 0.01
   max_motion_score: 0.16

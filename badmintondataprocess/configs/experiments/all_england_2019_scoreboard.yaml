@@ -1,0 +1,15 @@
+rally_segmentation:
+  sample_every: 10
+  min_rally_seconds: 1.0
+  max_rally_seconds: 120.0
+  scoreboard_score_roi:
+    - 0.3826
+    - 0.0521
+    - 0.0317
+    - 0.0854
+  scoreboard_context_roi:
+    - 0.1467
+    - 0.0375
+    - 0.2758
+    - 0.1125
+  scoreboard_max_lag_seconds: 8.0

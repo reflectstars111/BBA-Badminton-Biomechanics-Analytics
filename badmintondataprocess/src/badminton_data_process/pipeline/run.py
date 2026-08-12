@@ -78,6 +78,19 @@ def run_pipeline(
             max_post_context_seconds=float(rally_cfg.get("max_post_context_seconds", 1.4)),
             allowed_context_drop_samples=int(rally_cfg.get("allowed_context_drop_samples", 1)),
             overwrite=True,
+            scoreboard_score_roi=(
+                tuple(rally_cfg["scoreboard_score_roi"])
+                if rally_cfg.get("scoreboard_score_roi")
+                else None
+            ),
+            scoreboard_context_roi=(
+                tuple(rally_cfg["scoreboard_context_roi"])
+                if rally_cfg.get("scoreboard_context_roi")
+                else None
+            ),
+            scoreboard_max_lag_seconds=float(
+                rally_cfg.get("scoreboard_max_lag_seconds", 8.0)
+            ),
         )
     if stop_after == "rally":
         context.write_manifest()

@@ -173,21 +173,12 @@ def shift_bbox(
     return (sx1, sy1, sx2, sy2)
 
 
-def clamp_bbox_to_role_half(
+def clamp_bbox_to_frame(
     bbox: tuple[int, int, int, int],
-    player_id: str,
-    near_threshold_y: float,
     frame_shape: tuple[int, int, int],
 ) -> tuple[int, int, int, int]:
     height, width = frame_shape[:2]
     x1, y1, x2, y2 = bbox
-    split = int(round(near_threshold_y))
-    if player_id == 'far':
-        y2 = min(y2, split)
-        y1 = min(y1, max(0, y2 - 1))
-    else:
-        y1 = max(y1, split)
-        y2 = max(y2, min(height - 1, y1 + 1))
     x1 = max(0, min(width - 2, x1))
     x2 = max(x1 + 1, min(width - 1, x2))
     y1 = max(0, min(height - 2, y1))
@@ -357,10 +348,8 @@ def pick_player_boxes(
     for player_id in ['near', 'far']:
         predicted_bbox = predict_track_bbox(track_states[player_id], frame_shape)
         if predicted_bbox is not None:
-            predicted_bbox = clamp_bbox_to_role_half(
+            predicted_bbox = clamp_bbox_to_frame(
                 predicted_bbox,
-                player_id=player_id,
-                near_threshold_y=near_threshold_y,
                 frame_shape=frame_shape,
             )
         predicted_bottom = (
@@ -396,10 +385,8 @@ def pick_player_boxes(
         if role_candidates:
             _, selected_index, best = max(role_candidates, key=lambda item: item[0])
             used_candidate_indices.add(selected_index)
-            bbox = clamp_bbox_to_role_half(
+            bbox = clamp_bbox_to_frame(
                 best['bbox'],
-                player_id=player_id,
-                near_threshold_y=near_threshold_y,
                 frame_shape=frame_shape,
             )
             previous_bbox = track_states[player_id].get('bbox')
@@ -419,10 +406,8 @@ def pick_player_boxes(
         track_states[player_id]['miss_count'] = miss_count
         max_missing_frames = far_max_missing_frames if player_id == 'far' else near_max_missing_frames
         if predicted_bbox is not None and miss_count <= max_missing_frames:
-            predicted_bbox = clamp_bbox_to_role_half(
+            predicted_bbox = clamp_bbox_to_frame(
                 predicted_bbox,
-                player_id=player_id,
-                near_threshold_y=near_threshold_y,
                 frame_shape=frame_shape,
             )
             track_states[player_id]['bbox'] = predicted_bbox

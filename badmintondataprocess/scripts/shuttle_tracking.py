@@ -202,6 +202,134 @@ def draw_debug(
     return debug
 
 
+def process_video_tracknet(
+    video_path: Path,
+    calibration_dir: Path,
+    debug_dir: Path,
+    tracknet_weights: str,
+    max_missing_frames: int,
+) -> tuple[list[dict[str, object]], dict[str, object]]:
+    """Track the shuttle using a TrackNet multi-frame detector."""
+    from badminton_data_process.tracking.shuttle.tracknet import TrackNetDetector
+
+    require_opencv()
+    detector = TrackNetDetector(tracknet_weights)
+    capture = cv2.VideoCapture(str(video_path))
+    if not capture.isOpened():
+        return [], {
+            'video_path': str(video_path),
+            'video_stem': video_path.stem,
+            'status': 'failed',
+            'track_rows': 0,
+            'visible_rows': 0,
+            'interpolated_rows': 0,
+            'debug_video': '',
+            'message': 'cannot open video',
+        }
+
+    fps = capture.get(cv2.CAP_PROP_FPS) or 30.0
+    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+    corners = load_calibration(calibration_dir / f'{video_path.stem}.json')
+    search_mask = build_search_mask((height, width, 3), corners)
+
+    frames: list[np.ndarray] = []
+    while True:
+        ok, frame = capture.read()
+        if not ok:
+            break
+        frames.append(frame)
+    capture.release()
+
+    detections = detector.detect_sequence(frames, {'search_mask': search_mask})
+
+    debug_dir = ensure_dir(debug_dir)
+    debug_video_path = debug_dir / f'{video_path.stem}.mp4'
+    writer = cv2.VideoWriter(
+        str(debug_video_path),
+        cv2.VideoWriter_fourcc(*'mp4v'),
+        fps,
+        (width, height),
+    )
+
+    rows: list[dict[str, object]] = []
+    rally_id = rally_id_from_stem(video_path.stem)
+    visible_rows = 0
+    interpolated_rows = 0
+    prev_point: tuple[float, float] | None = None
+    prev_velocity: tuple[float, float] | None = None
+    missing_count = 0
+
+    for frame_id, detection in enumerate(detections):
+        point: tuple[float, float] | None = None
+        confidence = 0.0
+        interpolated = False
+        visibility = 0
+
+        if detection['visibility'] and detection['x'] is not None:
+            point = (float(detection['x']), float(detection['y']))
+            confidence = float(detection['confidence'])
+            visibility = 1
+            visible_rows += 1
+            if prev_point is not None:
+                prev_velocity = (point[0] - prev_point[0], point[1] - prev_point[1])
+            prev_point = point
+            missing_count = 0
+        elif prev_point is not None and prev_velocity is not None and missing_count < max_missing_frames:
+            decayed_velocity = (prev_velocity[0] * 0.85, prev_velocity[1] * 0.85)
+            point = (prev_point[0] + decayed_velocity[0], prev_point[1] + decayed_velocity[1])
+            point = (
+                float(min(max(point[0], 0.0), width - 1.0)),
+                float(min(max(point[1], 0.0), height - 1.0)),
+            )
+            if point_is_in_mask(point, search_mask):
+                confidence = 0.15
+                interpolated = True
+                visibility = 0
+                prev_point = point
+                prev_velocity = decayed_velocity
+                missing_count += 1
+                interpolated_rows += 1
+            else:
+                prev_point = None
+                prev_velocity = None
+                missing_count += 1
+        else:
+            missing_count += 1
+            if missing_count > max_missing_frames:
+                prev_point = None
+                prev_velocity = None
+
+        rows.append(
+            {
+                'video_path': str(video_path),
+                'video_stem': video_path.stem,
+                'rally_id': rally_id,
+                'frame_id': frame_id,
+                'timestamp': round(frame_id / fps, 3),
+                'x': '' if point is None else round(point[0], 2),
+                'y': '' if point is None else round(point[1], 2),
+                'confidence': round(confidence, 3),
+                'is_interpolated': int(interpolated),
+                'visibility': visibility,
+            }
+        )
+        frame = frames[frame_id] if frame_id < len(frames) else frames[-1]
+        writer.write(draw_debug(frame, corners, point, confidence, interpolated))
+
+    writer.release()
+    return rows, {
+        'video_path': str(video_path),
+        'video_stem': video_path.stem,
+        'status': 'success',
+        'track_rows': len(rows),
+        'visible_rows': visible_rows,
+        'interpolated_rows': interpolated_rows,
+        'debug_video': str(debug_video_path),
+        'message': 'ok',
+    }
+
+
 def process_video(
     video_path: Path,
     calibration_dir: Path,
@@ -215,7 +343,17 @@ def process_video(
     max_candidate_size: int,
     direction_weight: float,
     speed_weight: float,
+    model: str = 'motion_bright_baseline',
+    tracknet_weights: str = '',
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
+    if model == 'tracknet':
+        return process_video_tracknet(
+            video_path=video_path,
+            calibration_dir=calibration_dir,
+            debug_dir=debug_dir,
+            tracknet_weights=tracknet_weights,
+            max_missing_frames=max_missing_frames,
+        )
     require_opencv()
     capture = cv2.VideoCapture(str(video_path))
     if not capture.isOpened():
@@ -372,6 +510,8 @@ def track_shuttle(
     max_candidate_size: int,
     direction_weight: float,
     speed_weight: float,
+    model: str = 'motion_bright_baseline',
+    tracknet_weights: str = '',
 ) -> int:
     videos = iter_video_paths(input_path)
     all_rows: list[dict[str, object]] = []
@@ -391,6 +531,8 @@ def track_shuttle(
             max_candidate_size=max_candidate_size,
             direction_weight=direction_weight,
             speed_weight=speed_weight,
+            model=model,
+            tracknet_weights=tracknet_weights,
         )
         all_rows.extend(rows)
         summaries.append(summary)
@@ -494,6 +636,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.35,
         help='Penalty weight for candidates whose speed changes too abruptly.',
     )
+    parser.add_argument(
+        '--model',
+        choices=['motion_bright_baseline', 'tracknet'],
+        default='motion_bright_baseline',
+        help='Shuttle detection model. "tracknet" uses the multi-frame TrackNet detector.',
+    )
+    parser.add_argument(
+        '--tracknet-weights',
+        type=str,
+        default='',
+        help='Path to the TrackNet checkpoint (required when --model tracknet).',
+    )
     return parser
 
 
@@ -514,6 +668,8 @@ def main() -> int:
         max_candidate_size=args.max_candidate_size,
         direction_weight=args.direction_weight,
         speed_weight=args.speed_weight,
+        model=args.model,
+        tracknet_weights=args.tracknet_weights,
     )
 
 

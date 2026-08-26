@@ -172,6 +172,8 @@ def run_pipeline(
                 max_candidate_size=shuttle_cfg.max_candidate_size,
                 direction_weight=shuttle_cfg.direction_weight,
                 speed_weight=shuttle_cfg.speed_weight,
+                model=shuttle_cfg.model,
+                tracknet_weights=shuttle_cfg.tracknet_weights,
             )
     if stop_after == "tracking":
         context.write_manifest()

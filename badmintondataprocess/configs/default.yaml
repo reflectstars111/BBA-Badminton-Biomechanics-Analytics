@@ -80,6 +80,8 @@ shuttle_tracking:
   debug_dir: outputs/shuttle_tracking_debug
   model: motion_bright_baseline
   future_model_interface: tracknet
+  tracknet_weights: weights/TrackNet_best.pt
+  tracknet_vis_threshold: 0.15
   diff_threshold: 18
   max_jump: 80.0
   max_missing_frames: 3

@@ -141,6 +141,8 @@ class ShuttleTrackingConfig:
     debug_dir: str = "outputs/shuttle_tracking_debug"
     model: str = "motion_bright_baseline"
     future_model_interface: str = "tracknet"
+    tracknet_weights: str = ""
+    tracknet_vis_threshold: float = 0.15
     diff_threshold: int = 18
     max_jump: float = 80.0
     max_missing_frames: int = 3

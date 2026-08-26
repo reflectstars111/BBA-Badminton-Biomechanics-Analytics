@@ -170,14 +170,20 @@ def normalized_corners(
 
 
 def court_line_support(frame: np.ndarray, corners: np.ndarray, line_width: int = 9) -> float:
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    white = ((hsv[..., 1] < 95) & (hsv[..., 2] > 135)).astype(np.uint8)
+    # Court lines are bright relative to the floor around them, but the
+    # absolute brightness and saturation vary by broadcast: All England
+    # renders lines at V~138/S~167 while India Open is brighter and more
+    # neutral. A fixed low-saturation/high-value white mask only fires on
+    # the brighter broadcasts, so measure brightness contrast instead.
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    floor = max(120.0, float(gray.mean()) + 0.75 * float(gray.std()))
+    bright = (gray > floor).astype(np.uint8)
     scores: list[float] = []
     integer_corners = corners.astype(np.int32)
     for start, end in zip(integer_corners, np.roll(integer_corners, -1, axis=0)):
-        band = np.zeros(white.shape, dtype=np.uint8)
+        band = np.zeros(bright.shape, dtype=np.uint8)
         cv2.line(band, tuple(start), tuple(end), 255, line_width)
-        scores.append(float(np.mean(white[band > 0])))
+        scores.append(float(np.mean(bright[band > 0])))
     return float(np.mean(scores))
 
 

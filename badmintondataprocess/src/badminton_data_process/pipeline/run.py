@@ -114,7 +114,7 @@ def run_pipeline(
             outputs=[str(calibration_dir), str(calibration_summary_csv)],
             parameters=asdict(calibration_cfg),
         ):
-            calibrate_courts(
+            calibration_result = calibrate_courts(
                 rallies_csv,
                 calibration_dir,
                 calibration_preview_dir,
@@ -122,6 +122,11 @@ def run_pipeline(
                 reference_points=calibration_cfg.reference_points,
                 min_line_support=calibration_cfg.min_line_support,
             )
+            if calibration_result != 0:
+                raise RuntimeError(
+                    "court calibration did not succeed for all rally clips; "
+                    "see court_calibration_summary.csv"
+                )
     if stop_after == "calibrate":
         context.write_manifest()
         return run_dir

@@ -237,24 +237,34 @@ def calibrate_video(
         else:
             frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
             candidate_indices = representative_frame_indices(frame_count)
+            best_frame: np.ndarray | None = None
+            best_index = -1
+            best_corners: np.ndarray | None = None
+            best_support = -1.0
             last_error: str | None = None
-            frame = None
-            frame_index = -1
-            corners = None
             for candidate_index in candidate_indices:
                 try:
                     candidate_frame = read_frame_at(capture, candidate_index)
                     candidate_corners = detect_court_corners(candidate_frame)
-                    frame = candidate_frame
-                    frame_index = candidate_index
-                    corners = candidate_corners
-                    break
+                    support = court_line_support(candidate_frame, candidate_corners)
                 except Exception as exc:  # pragma: no cover - runtime dependent
                     last_error = str(exc)
                     continue
-            if frame is None or corners is None:
+                if support > best_support:
+                    best_frame = candidate_frame
+                    best_index = candidate_index
+                    best_corners = candidate_corners
+                    best_support = support
+            if best_frame is None or best_corners is None:
                 raise RuntimeError(last_error or 'Failed to detect court corners')
-            message = 'automatic contour calibration'
+            if best_support < min_line_support:
+                raise RuntimeError(
+                    f'best court line support {best_support:.3f} < {min_line_support:.3f}'
+                )
+            frame = best_frame
+            frame_index = best_index
+            corners = best_corners
+            message = f'automatic contour calibration; line support={best_support:.3f}'
         output_json = output_dir / f'{video_path.stem}.json'
         output_preview = preview_dir / f'{video_path.stem}.png'
         save_calibration(video_path, frame_index, frame.shape, corners, output_json, output_preview)

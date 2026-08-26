@@ -605,7 +605,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         '--min-top-dark-ratio',
         type=float,
-        default=0.80,
+        default=0.15,
         help='Minimum dark-pixel ratio in the upper area to prefer broadcast wide shots.',
     )
     parser.add_argument(

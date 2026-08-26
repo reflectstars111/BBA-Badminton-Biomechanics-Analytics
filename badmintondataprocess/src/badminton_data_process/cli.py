@@ -10,6 +10,7 @@ from badminton_data_process.main_view.analyze import main as main_view_analyze_m
 from badminton_data_process.main_view.export import main as main_view_export_main
 from badminton_data_process.metadata.download import main as download_main
 from badminton_data_process.metadata.matches import main as metadata_validate_main
+from badminton_data_process.metadata.register import main as metadata_register_main
 from badminton_data_process.pipeline.run import main as pipeline_run_main
 from badminton_data_process.rally.segmentation import main as rally_segment_main
 from badminton_data_process.review.main_view import main as review_main_view_main
@@ -30,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
         "command",
         nargs="*",
         help=(
-            "Commands: metadata validate, download, preprocess, rally segment, "
+            "Commands: metadata validate/register-local, download, preprocess, rally segment, "
             "main-view analyze/export, review main-view, calibrate, track players, "
             "track shuttle, smooth, visualize, tactics analyze, compare trackers, "
             "pipeline run, verify"
@@ -47,6 +48,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if argv[:2] == ["metadata", "validate"]:
         return metadata_validate_main(argv[2:])
+    if argv[:2] == ["metadata", "register-local"]:
+        return metadata_register_main(argv[2:])
     if argv[0] == "download":
         return download_main(argv[1:])
     if argv[0] == "preprocess":

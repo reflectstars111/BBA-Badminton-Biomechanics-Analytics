@@ -89,7 +89,7 @@ class RallySegmentationConfig:
     min_top_green_ratio: float = 0.05
     min_middle_green_ratio: float = 0.20
     max_left_right_green_diff: float = 0.16
-    min_top_dark_ratio: float = 0.80
+    min_top_dark_ratio: float = 0.15
     min_middle_edge_ratio: float = 0.16
     pad_before_seconds: float = 0.4
     pad_after_seconds: float = 0.6

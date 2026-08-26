@@ -32,7 +32,7 @@ rally_segmentation:
   min_top_green_ratio: 0.05
   min_middle_green_ratio: 0.20
   max_left_right_green_diff: 0.16
-  min_top_dark_ratio: 0.80
+  min_top_dark_ratio: 0.15
   min_middle_edge_ratio: 0.16
   pad_before_seconds: 0.4
   pad_after_seconds: 0.6

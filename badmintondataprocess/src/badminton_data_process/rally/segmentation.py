@@ -172,7 +172,7 @@ def build_timeline_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-top-green-ratio", type=float, default=0.05)
     parser.add_argument("--min-middle-green-ratio", type=float, default=0.20)
     parser.add_argument("--max-left-right-green-diff", type=float, default=0.16)
-    parser.add_argument("--min-top-dark-ratio", type=float, default=0.80)
+    parser.add_argument("--min-top-dark-ratio", type=float, default=0.15)
     parser.add_argument("--min-middle-edge-ratio", type=float, default=0.16)
     parser.add_argument("--pad-before-seconds", type=float, default=0.4)
     parser.add_argument("--pad-after-seconds", type=float, default=0.6)

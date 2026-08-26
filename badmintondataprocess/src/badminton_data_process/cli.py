@@ -4,6 +4,7 @@ import argparse
 import sys
 
 from badminton_data_process.calibration.court import main as calibrate_main
+from badminton_data_process.core.verify import main as verify_main
 from badminton_data_process.main_view.analyze import main as main_view_analyze_main
 from badminton_data_process.main_view.export import main as main_view_export_main
 from badminton_data_process.metadata.download import main as download_main
@@ -29,7 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Commands: metadata validate, download, preprocess, rally segment, "
             "main-view analyze/export, review main-view, calibrate, track players, "
-            "track shuttle, smooth, visualize, pipeline run"
+            "track shuttle, smooth, visualize, pipeline run, verify"
         ),
     )
     return parser
@@ -67,6 +68,8 @@ def main(argv: list[str] | None = None) -> int:
         return visualize_main(argv[1:])
     if argv[:2] == ["pipeline", "run"]:
         return pipeline_run_main(argv[2:])
+    if argv[0] == "verify":
+        return verify_main(argv[1:])
 
     print(f"Unknown command: {' '.join(argv)}", file=sys.stderr)
     build_parser().print_help()

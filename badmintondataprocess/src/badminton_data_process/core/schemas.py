@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -324,10 +325,27 @@ class FrameIndexRow:
     segment_id: str
 
 
+class StageName(str, Enum):
+    RALLY_SEGMENTATION = "rally_segmentation"
+    COURT_CALIBRATION = "court_calibration"
+    PLAYER_TRACKING = "player_tracking"
+    SHUTTLE_TRACKING = "shuttle_tracking"
+    TRAJECTORY_SMOOTHING = "trajectory_smoothing"
+    VISUALIZATION = "visualization"
+
+
+STAGE_ORDER = list(StageName)
+
+
+class StageStatus(str, Enum):
+    SUCCESS = "success"
+    FAILED = "failed"
+
+
 @dataclass(slots=True)
 class PipelineStageReport:
-    name: str
-    status: str
+    name: StageName
+    status: StageStatus
     started_at: str
     finished_at: str
     duration_seconds: float

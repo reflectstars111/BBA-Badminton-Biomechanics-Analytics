@@ -332,6 +332,7 @@ class StageName(str, Enum):
     SHUTTLE_TRACKING = "shuttle_tracking"
     TRAJECTORY_SMOOTHING = "trajectory_smoothing"
     VISUALIZATION = "visualization"
+    TACTICAL_ANALYSIS = "tactical_analysis"
 
 
 STAGE_ORDER = list(StageName)

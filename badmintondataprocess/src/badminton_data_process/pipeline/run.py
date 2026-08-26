@@ -13,6 +13,7 @@ from badminton_data_process.core.run import RunContext, make_run_id, stage_repor
 from badminton_data_process.core.schemas import StageName
 from badminton_data_process.rally.segmentation import segment_rallies
 from badminton_data_process.smoothing.trajectory import smooth_trajectory
+from badminton_data_process.tactics.analyze import main as tactics_main
 from badminton_data_process.tracking.player.tracking import track_players
 from badminton_data_process.tracking.shuttle.tracking import track_shuttle
 from badminton_data_process.visualization.tracking import main as visualize_tracking_main
@@ -51,6 +52,9 @@ def run_pipeline(
     shuttle_smoothed_csv = annotations_dir / "shuttle_tracks_smoothed.csv"
     player_smoothing_summary = annotations_dir / "player_smoothing_summary.csv"
     shuttle_smoothing_summary = annotations_dir / "shuttle_smoothing_summary.csv"
+    tactics_dir = ensure_dir(outputs_dir / "tactics")
+    tactics_summary_csv = tactics_dir / "tactics_summary.csv"
+    tactics_events_csv = tactics_dir / "tactics_events.csv"
 
     if StageName.RALLY_SEGMENTATION not in completed:
         rally_cfg = cfg.rally_segmentation
@@ -232,6 +236,32 @@ def run_pipeline(
                     str(player_smoothing_summary),
                     "--output-dir",
                     str(chart_dir),
+                ]
+            )
+
+    if StageName.TACTICAL_ANALYSIS not in completed:
+        tactics_cfg = cfg.tactical_analysis
+        with stage_report(
+            context,
+            StageName.TACTICAL_ANALYSIS,
+            inputs=[str(player_smoothed_csv), str(shuttle_smoothed_csv), str(calibration_dir)],
+            outputs=[str(tactics_summary_csv), str(tactics_events_csv)],
+            parameters=asdict(tactics_cfg),
+        ):
+            tactics_main(
+                [
+                    str(player_smoothed_csv),
+                    str(shuttle_smoothed_csv),
+                    "--calibration-dir",
+                    str(calibration_dir),
+                    "--output-dir",
+                    str(tactics_dir),
+                    "--hit-distance-px",
+                    str(tactics_cfg.hit_distance_px),
+                    "--turn-angle-deg",
+                    str(tactics_cfg.turn_angle_deg),
+                    "--min-event-gap-frames",
+                    str(tactics_cfg.min_event_gap_frames),
                 ]
             )
 

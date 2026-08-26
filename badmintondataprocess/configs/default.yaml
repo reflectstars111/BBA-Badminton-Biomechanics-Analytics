@@ -98,6 +98,12 @@ smoothing:
   window_size: 5
   ema_alpha: 0.35
 
+tactical_analysis:
+  output_dir: outputs/tactics
+  hit_distance_px: 80.0
+  turn_angle_deg: 100.0
+  min_event_gap_frames: 15
+
 outputs:
   save_debug_video: true
   save_csv: true

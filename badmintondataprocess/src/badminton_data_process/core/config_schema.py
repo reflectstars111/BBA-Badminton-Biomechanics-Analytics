@@ -163,12 +163,21 @@ class SmoothingConfig:
 
 
 @dataclass(slots=True)
+class TacticalAnalysisConfig:
+    output_dir: str = "outputs/tactics"
+    hit_distance_px: float = 80.0
+    turn_angle_deg: float = 100.0
+    min_event_gap_frames: int = 15
+
+
+@dataclass(slots=True)
 class PipelineConfig:
     rally_segmentation: RallySegmentationConfig
     court_calibration: CourtCalibrationConfig
     player_tracking: PlayerTrackingConfig
     shuttle_tracking: ShuttleTrackingConfig
     smoothing: SmoothingConfig
+    tactical_analysis: TacticalAnalysisConfig
 
 
 def parse_config(config: dict[str, Any]) -> PipelineConfig:
@@ -186,4 +195,9 @@ def parse_config(config: dict[str, Any]) -> PipelineConfig:
             ShuttleTrackingConfig, config.get("shuttle_tracking", {}), "shuttle_tracking"
         ),
         smoothing=_parse(SmoothingConfig, config.get("smoothing", {}), "smoothing"),
+        tactical_analysis=_parse(
+            TacticalAnalysisConfig,
+            config.get("tactical_analysis", {}),
+            "tactical_analysis",
+        ),
     )

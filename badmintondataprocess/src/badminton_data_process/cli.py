@@ -13,6 +13,7 @@ from badminton_data_process.pipeline.run import main as pipeline_run_main
 from badminton_data_process.rally.segmentation import main as rally_segment_main
 from badminton_data_process.review.main_view import main as review_main_view_main
 from badminton_data_process.smoothing.trajectory import main as smooth_main
+from badminton_data_process.tactics.analyze import main as tactics_main
 from badminton_data_process.tracking.player.tracking import main as track_players_main
 from badminton_data_process.tracking.shuttle.tracking import main as track_shuttle_main
 from badminton_data_process.video.preprocess import main as preprocess_main
@@ -66,6 +67,8 @@ def main(argv: list[str] | None = None) -> int:
         return smooth_main(argv[1:])
     if argv[0] == "visualize":
         return visualize_main(argv[1:])
+    if argv[:2] == ["tactics", "analyze"]:
+        return tactics_main(argv[2:])
     if argv[:2] == ["pipeline", "run"]:
         return pipeline_run_main(argv[2:])
     if argv[0] == "verify":

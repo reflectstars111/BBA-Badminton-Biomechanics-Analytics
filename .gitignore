@@ -13,6 +13,7 @@ env/
 .agents/
 
 # Local inputs and generated outputs
+material/
 results/
 *.log
 

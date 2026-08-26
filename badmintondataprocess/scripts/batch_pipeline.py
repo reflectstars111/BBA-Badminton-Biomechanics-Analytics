@@ -4,9 +4,14 @@ import argparse
 import os
 from pathlib import Path
 
-from badminton_data_process.core.paths import discover_project_root
 from badminton_data_process.pipeline.run import run_pipeline
 from common import read_csv_rows, write_csv_rows
+
+# This script lives in scripts/, so the project root is one level up. A
+# cwd-based lookup is fragile: 'pipeline batch' may be launched from
+# anywhere, and the pipeline stages must resolve configs/ and runs/ under
+# the project root regardless of the caller's working directory.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 BATCH_FIELDNAMES = ['match_id', 'video', 'run_dir', 'status', 'message']
 
@@ -26,7 +31,7 @@ def batch_run_matches(
     run_pipeline resumes from an existing manifest, so re-running the batch
     only finishes stages that are still missing.
     """
-    root = discover_project_root()
+    root = PROJECT_ROOT
     rows = read_csv_rows(matches_csv)
     results: list[dict[str, str]] = []
     processed = 0
@@ -96,7 +101,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    root = discover_project_root()
+    root = PROJECT_ROOT
     matches_csv = args.matches_csv or root / 'metadata' / 'matches.csv'
     runs_dir = args.runs_dir or root / 'runs'
     results = batch_run_matches(

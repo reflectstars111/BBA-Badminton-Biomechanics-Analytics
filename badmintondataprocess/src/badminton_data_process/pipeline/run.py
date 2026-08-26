@@ -178,6 +178,7 @@ def run_pipeline(
                 speed_weight=shuttle_cfg.speed_weight,
                 model=shuttle_cfg.model,
                 tracknet_weights=shuttle_cfg.tracknet_weights,
+                tracknet_vis_threshold=shuttle_cfg.tracknet_vis_threshold,
             )
     if stop_after == "tracking":
         context.write_manifest()

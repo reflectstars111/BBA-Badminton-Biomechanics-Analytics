@@ -50,7 +50,12 @@ def require_opencv() -> None:
 
 def iter_video_paths(input_path: Path) -> list[Path]:
     if input_path.is_file() and input_path.suffix.lower() == '.csv':
-        return [Path(row['output_path']) for row in read_csv_rows(input_path) if row.get('output_path')]
+        paths = []
+        for row in read_csv_rows(input_path):
+            candidate = row.get('output_path') or row.get('video_path')
+            if candidate:
+                paths.append(Path(candidate))
+        return paths
     if input_path.is_dir():
         return sorted(input_path.glob('*.mp4'))
     return [input_path]
@@ -208,12 +213,13 @@ def process_video_tracknet(
     debug_dir: Path,
     tracknet_weights: str,
     max_missing_frames: int,
+    vis_threshold: float = 0.15,
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
     """Track the shuttle using a TrackNet multi-frame detector."""
     from badminton_data_process.tracking.shuttle.tracknet import TrackNetDetector
 
     require_opencv()
-    detector = TrackNetDetector(tracknet_weights)
+    detector = TrackNetDetector(tracknet_weights, vis_threshold=vis_threshold)
     capture = cv2.VideoCapture(str(video_path))
     if not capture.isOpened():
         return [], {
@@ -345,6 +351,7 @@ def process_video(
     speed_weight: float,
     model: str = 'motion_bright_baseline',
     tracknet_weights: str = '',
+    tracknet_vis_threshold: float = 0.15,
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
     if model == 'tracknet':
         return process_video_tracknet(
@@ -353,6 +360,7 @@ def process_video(
             debug_dir=debug_dir,
             tracknet_weights=tracknet_weights,
             max_missing_frames=max_missing_frames,
+            vis_threshold=tracknet_vis_threshold,
         )
     require_opencv()
     capture = cv2.VideoCapture(str(video_path))
@@ -512,6 +520,7 @@ def track_shuttle(
     speed_weight: float,
     model: str = 'motion_bright_baseline',
     tracknet_weights: str = '',
+    tracknet_vis_threshold: float = 0.15,
 ) -> int:
     videos = iter_video_paths(input_path)
     all_rows: list[dict[str, object]] = []
@@ -533,6 +542,7 @@ def track_shuttle(
             speed_weight=speed_weight,
             model=model,
             tracknet_weights=tracknet_weights,
+            tracknet_vis_threshold=tracknet_vis_threshold,
         )
         all_rows.extend(rows)
         summaries.append(summary)
@@ -648,6 +658,12 @@ def build_parser() -> argparse.ArgumentParser:
         default='',
         help='Path to the TrackNet checkpoint (required when --model tracknet).',
     )
+    parser.add_argument(
+        '--tracknet-vis-threshold',
+        type=float,
+        default=0.15,
+        help='TrackNet heatmap peak threshold for a frame to count as a visible detection.',
+    )
     return parser
 
 
@@ -670,6 +686,7 @@ def main() -> int:
         speed_weight=args.speed_weight,
         model=args.model,
         tracknet_weights=args.tracknet_weights,
+        tracknet_vis_threshold=args.tracknet_vis_threshold,
     )
 
 

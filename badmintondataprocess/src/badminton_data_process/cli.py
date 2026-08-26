@@ -11,6 +11,7 @@ from badminton_data_process.main_view.export import main as main_view_export_mai
 from badminton_data_process.metadata.download import main as download_main
 from badminton_data_process.metadata.matches import main as metadata_validate_main
 from badminton_data_process.metadata.register import main as metadata_register_main
+from badminton_data_process.pipeline.batch import main as pipeline_batch_main
 from badminton_data_process.pipeline.run import main as pipeline_run_main
 from badminton_data_process.rally.segmentation import main as rally_segment_main
 from badminton_data_process.review.main_view import main as review_main_view_main
@@ -34,7 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Commands: metadata validate/register-local, download, preprocess, rally segment, "
             "main-view analyze/export, review main-view, calibrate, track players, "
             "track shuttle, smooth, visualize, tactics analyze, compare trackers, "
-            "pipeline run, verify"
+            "pipeline run/batch, verify"
         ),
     )
     return parser
@@ -76,6 +77,8 @@ def main(argv: list[str] | None = None) -> int:
         return tactics_main(argv[2:])
     if argv[:2] == ["compare", "trackers"]:
         return compare_trackers_main(argv[2:])
+    if argv[:2] == ["pipeline", "batch"]:
+        return pipeline_batch_main(argv[2:])
     if argv[:2] == ["pipeline", "run"]:
         return pipeline_run_main(argv[2:])
     if argv[0] == "verify":

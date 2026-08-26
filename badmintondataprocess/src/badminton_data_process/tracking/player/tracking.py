@@ -458,6 +458,31 @@ def project_point(homography: np.ndarray, point: tuple[float, float]) -> tuple[f
     return float(projected[0]), float(projected[1])
 
 
+def clamp_to_court_quad(
+    point: tuple[float, float],
+    corners: np.ndarray,
+) -> tuple[float, float]:
+    # Clamp an interpolated projection point to the court quadrilateral so a
+    # drifted prediction's feet stay on court. The quad is convex and its y
+    # edges are monotonic, so the valid x-range at a given y is the horizontal
+    # span of the edges crossing that y. (An axis-aligned bbox clamp lets
+    # points sit at the bbox corners, which for a trapezoid lie off-court.)
+    x, y = point
+    y_min = float(np.min(corners[:, 1]))
+    y_max = float(np.max(corners[:, 1]))
+    y = min(max(y, y_min), y_max)
+    xs: list[float] = []
+    for (x1, y1), (x2, y2) in zip(corners, np.roll(corners, -1, axis=0)):
+        if (y1 <= y <= y2) or (y2 <= y <= y1):
+            if y2 == y1:
+                xs.extend((float(x1), float(x2)))
+            else:
+                xs.append(float(x1 + (y - y1) * (x2 - x1) / (y2 - y1)))
+    if xs:
+        x = min(max(x, min(xs)), max(xs))
+    return (x, y)
+
+
 def draw_debug_frame(
     frame: np.ndarray,
     corners: np.ndarray,
@@ -626,6 +651,13 @@ def process_video(
                 x1, y1, x2, y2 = bbox
                 image_x = (x1 + x2) / 2.0
                 image_y = float(y2)
+                if interpolated:
+                    # A predicted (missed-player) box can drift above the far
+                    # baseline or past the sidelines; projecting the off-court
+                    # feet through the homography extrapolates to absurd court
+                    # coords (e.g. court_y=-96). Clamp the projection point to
+                    # the court quad so the feet stay on court.
+                    image_x, image_y = clamp_to_court_quad((image_x, image_y), corners)
                 court_x, court_y = project_point(homography, (image_x, image_y))
                 rows.append(
                     {

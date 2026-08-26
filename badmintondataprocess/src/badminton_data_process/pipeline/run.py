@@ -7,10 +7,10 @@ from pathlib import Path
 from badminton_data_process.calibration.court import calibrate_courts
 from badminton_data_process.core.config import load_config
 from badminton_data_process.core.config_schema import parse_config
-from badminton_data_process.core.io import ensure_dir
+from badminton_data_process.core.io import ensure_dir, read_csv_rows, write_csv_rows
 from badminton_data_process.core.paths import discover_project_root
 from badminton_data_process.core.run import RunContext, make_run_id, stage_report
-from badminton_data_process.core.schemas import StageName
+from badminton_data_process.core.schemas import RALLY_FIELDS, StageName
 from badminton_data_process.rally.segmentation import segment_rallies
 from badminton_data_process.smoothing.trajectory import smooth_trajectory
 from badminton_data_process.tactics.analyze import main as tactics_main
@@ -122,10 +122,36 @@ def run_pipeline(
                 reference_points=calibration_cfg.reference_points,
                 min_line_support=calibration_cfg.min_line_support,
             )
-            if calibration_result != 0:
+        if calibration_result != 0:
+            if not calibration_cfg.reference_points:
                 raise RuntimeError(
                     "court calibration did not succeed for all rally clips; "
                     "see court_calibration_summary.csv"
+                )
+            # With reference points, the line-support gate is the court-view
+            # filter: a clip it rejects is not a fixed-camera court view (e.g.
+            # a replay/close-up fragment), so drop it from the rally set and
+            # keep going instead of failing the whole run. A reference that
+            # fails on every clip is a misconfiguration.
+            summary_rows = read_csv_rows(calibration_summary_csv)
+            failed_stems = {
+                row['video_stem'] for row in summary_rows if row['status'] != 'success'
+            }
+            if len(failed_stems) == len(summary_rows):
+                raise RuntimeError(
+                    "reference court calibration failed for every rally clip; "
+                    "reference_points do not match this broadcast"
+                )
+            if failed_stems:
+                rally_rows = read_csv_rows(rallies_csv)
+                fieldnames = list(rally_rows[0]) if rally_rows else RALLY_FIELDS
+                kept = [
+                    row for row in rally_rows if Path(row['output_path']).stem not in failed_stems
+                ]
+                write_csv_rows(rallies_csv, fieldnames, kept)
+                print(
+                    f"Dropped {len(rally_rows) - len(kept)} non-court-view rally clip(s): "
+                    f"{sorted(failed_stems)}"
                 )
     if stop_after == "calibrate":
         context.write_manifest()

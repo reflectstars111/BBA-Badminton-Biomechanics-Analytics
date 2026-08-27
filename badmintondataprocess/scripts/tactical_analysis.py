@@ -329,18 +329,23 @@ def analyze_rally_events(
 
     if h is not None:
         strikes = detect_strikes(shuttle_image_points(shuttle_rows), turn_angle_deg, merge_frames)
-        for strike in strikes:
+        for index, strike in enumerate(strikes):
             frame_id = int(strike['frame_id'])
             event_type = 'hit'
             court_x: float | None = None
             court_y: float | None = None
 
             shuttle_court = image_to_court(float(strike['image_x']), float(strike['image_y']), h)
-            if shuttle_court is not None and (
+            in_court = shuttle_court is not None and (
                 0.0 <= shuttle_court[0] <= COURT_WIDTH_M and 0.0 <= shuttle_court[1] <= COURT_LENGTH_M
-            ):
-                # The shuttle is near the ground: a bounce on the court. The
-                # ground-plane projection is accurate here.
+            )
+            if index == len(strikes) - 1 and in_court:
+                # The shuttle touches the ground exactly once per rally, at
+                # the end. An airborne shuttle's ground projection also falls
+                # in-court, so the old in-court test flipped nearly every
+                # racket strike into a "landing" (203 vs 21). Only the rally's
+                # final reversal, with the shuttle at ground level (h=0), is a
+                # reliable bounce.
                 event_type = 'landing'
                 court_x, court_y = shuttle_court
             else:

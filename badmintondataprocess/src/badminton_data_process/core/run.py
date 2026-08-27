@@ -68,12 +68,17 @@ class RunContext:
         self.write_manifest()
 
     def _validate_stage_order(self, name: StageName) -> None:
-        if len(self.reports) >= len(STAGE_ORDER):
-            raise ValueError(f"Cannot add stage {name.value!r}: all stages already recorded")
-        expected = STAGE_ORDER[len(self.reports)]
-        if name != expected:
+        # Stages may be skipped (e.g. visualization via --skip-visualize), so
+        # the recorded sequence is a subsequence of STAGE_ORDER rather than the
+        # full list. Enforce forward progression and forbid duplicates; anything
+        # else in order is fine.
+        if not self.reports:
+            return
+        last = self.reports[-1]
+        if STAGE_ORDER.index(name) <= STAGE_ORDER.index(last.name):
             raise ValueError(
-                f"Stage out of order: expected {expected.value!r}, got {name.value!r}"
+                f"Stage out of order: expected a stage after {last.name.value!r}, "
+                f"got {name.value!r}"
             )
 
     def write_manifest(self) -> None:

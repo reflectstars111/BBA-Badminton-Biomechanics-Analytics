@@ -123,24 +123,22 @@ def run_pipeline(
                 min_line_support=calibration_cfg.min_line_support,
             )
         if calibration_result != 0:
-            if not calibration_cfg.reference_points:
-                raise RuntimeError(
-                    "court calibration did not succeed for all rally clips; "
-                    "see court_calibration_summary.csv"
-                )
-            # With reference points, the line-support gate is the court-view
-            # filter: a clip it rejects is not a fixed-camera court view (e.g.
-            # a replay/close-up fragment), so drop it from the rally set and
-            # keep going instead of failing the whole run. A reference that
-            # fails on every clip is a misconfiguration.
+            # The line-support gate is the court-view filter: a clip it
+            # rejects is not a fixed-camera court view (a replay/close-up, or
+            # a view line detection can't resolve), so drop it from the rally
+            # set and keep going instead of failing the whole run. This holds
+            # whether the court is calibrated from reference points or found
+            # automatically. A gate that rejects every clip is a broadcast the
+            # reference/line detection simply doesn't match -- that is a real
+            # misconfiguration and fails.
             summary_rows = read_csv_rows(calibration_summary_csv)
             failed_stems = {
                 row['video_stem'] for row in summary_rows if row['status'] != 'success'
             }
             if len(failed_stems) == len(summary_rows):
                 raise RuntimeError(
-                    "reference court calibration failed for every rally clip; "
-                    "reference_points do not match this broadcast"
+                    "court calibration failed for every rally clip; "
+                    "reference points do not match this broadcast"
                 )
             if failed_stems:
                 rally_rows = read_csv_rows(rallies_csv)

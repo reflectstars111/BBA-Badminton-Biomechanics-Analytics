@@ -1,313 +1,139 @@
-# Good-Badminton: AI Badminton Hawk-Eye System 🏸
+# Good-Badminton · A Research-grade Badminton Broadcast Analysis Pipeline 🏸
 
-## Related Projects
+> **A secondary development based on [yo-WASSUP/Good-Badminton](https://github.com/yo-WASSUP/Good-Badminton).**
+>
+> The upstream project is a "frame-by-frame detection + trajectory visualization" demo tool.
+> On top of its computer-vision capabilities, this project rebuilds it into a
+> **reproducible, quality-gated** data-processing pipeline for publication-grade visual analysis.
 
-Good-Badminton, Good-Tennis, and Good-Pickleball are part of the same family of computer-vision sports video analysis projects. They share the same core ideas: player detection, ball trajectory tracking, court coordinate mapping, movement statistics, and visualized outputs. Each project adapts the court model, ball target, and sport-specific rules to a different sport.
-
-| Project | Sport | Stars |
-| --- | --- | --- |
-| [Good-Badminton](https://github.com/yo-WASSUP/Good-Badminton) | Badminton video analysis | [![Good-Badminton stars](https://img.shields.io/github/stars/yo-WASSUP/Good-Badminton?style=social)](https://github.com/yo-WASSUP/Good-Badminton/stargazers) |
-| [Good-Tennis](https://github.com/yo-WASSUP/Good-Tennis) | Tennis video analysis | [![Good-Tennis stars](https://img.shields.io/github/stars/yo-WASSUP/Good-Tennis?style=social)](https://github.com/yo-WASSUP/Good-Tennis/stargazers) |
-| [Good-Pickleball](https://github.com/yo-WASSUP/Good-Pickleball) | Pickleball video analysis | [![Good-Pickleball stars](https://img.shields.io/github/stars/yo-WASSUP/Good-Pickleball?style=social)](https://github.com/yo-WASSUP/Good-Pickleball/stargazers) |
-
-<div align="center">
-
-[![GitHub stars](https://img.shields.io/github/stars/yo-WASSUP/Good-Badminton?style=social)](https://github.com/yo-WASSUP/Good-Badminton/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/yo-WASSUP/Good-Badminton?style=social)](https://github.com/yo-WASSUP/Good-Badminton/network/members)
-[![GitHub license](https://img.shields.io/github/license/yo-WASSUP/Good-Badminton)](https://github.com/yo-WASSUP/Good-Badminton/blob/main/LICENSE)
-[![RedNote](https://img.shields.io/badge/RedNote-ff2442)](https://www.xiaohongshu.com/explore/6a37b1d20000000011016229?xsec_token=ABod3wXBTiDppp6W2Ou0QHlu2eotUkeu27-ha64nFRR74=&xsec_source=pc_user)
-
-**A computer-vision toolkit for badminton match video analysis**
-
-[中文](README.md) | [English](README_EN.md)
-
-</div>
-
-## 🎬 Preview
-
-![Good-Badminton analysis preview](assets/demo_en.gif)
-
-
-## 🆕 Changelog
-
-- **2026-06-27**: Improved automatic court-line detection.
-- **2026-06-24**: Added Gradio WebUI, - From KangweiLIAO PR.
-- **2026-06-23**: Added automatic court boundary detection.
-- **2026-06-20**: Initial open-source release.
-- **2026-06-17**: Project documentation cleanup.
-- **Current version**: Supports player pose detection, shuttlecock detection, court coordinate mapping, trajectory statistics, heatmaps, scatter plots, and annotated video output.
-- **Experimental features**: Hit-point analysis and stroke statistics are still under active iteration and are mainly intended for research and secondary development.
-
-## 🔮 Roadmap
-
-- [x] Frame-by-frame badminton match video analysis
-- [x] RTMPose / RTMO / YOLO Pose model support
-- [x] YOLO shuttlecock detection model integration
-- [x] Manual court annotation and court coordinate mapping
-- [x] Player movement trajectory, speed, distance, and rally statistics
-- [x] Chinese / English visualization text
-- [x] Heatmap, scatter plot, and detection data export
-- [ ] More stable hit-point recognition
-- [ ] More accurate shuttlecock detection model
-- [ ] More complete stroke statistics
-- [x] Automatic court keypoint detection
-- [x] Gradio WebUI (browser-based, no CLI required)
-- [ ] Batch video analysis workflow
+[中文](README.md) · [English](README_EN.md)
 
 ---
 
-## ✨ Features
+## Relationship to Upstream
 
-- **Player pose detection** - Supports RTMPose, RTMO, and Ultralytics YOLO Pose for human keypoint and skeleton detection.
-- **Shuttlecock detection** - Uses a YOLO model to detect shuttlecock positions and draw trajectories in the output video.
-- **Court coordinate mapping** - Manually annotates court keypoints and maps image coordinates to standard badminton court coordinates.
-- **Automatic court detection** - Matches visible white/yellow court lines against a standard badminton court model, with manual corner correction available in the WebUI.
-- **Player position tracking** - Tracks upper-court and lower-court players separately and records movement trajectories.
-- **Rally detection** - Detects rally start/end states from continuous court-view matching and records rally IDs in overlays and detection data.
-- **Motion statistics** - Computes movement distance, current speed, maximum speed, and rally counts.
-- **Visual output** - Generates annotated videos with skeletons, trajectories, statistics, and court trajectory overlays.
-- **Position charts** - Automatically generates player position heatmaps and scatter plots.
-- **Chinese / English display** - Switch visualization text with `--language zh/en`.
-- **WebUI** - Browser-based interface built with Gradio. Upload videos, detect the court, configure parameters, and view results without touching the command line.
-- **Local execution** - Videos, models, and analysis outputs stay on your local machine.
+This project is forked from [yo-WASSUP/Good-Badminton](https://github.com/yo-WASSUP/Good-Badminton) (upstream author yo-WASSUP, Apache License 2.0).
 
-## Requirements
+- **Kept** the upstream CV capabilities and interactions: RTMPose / RTMO / YOLO Pose models, YOLO shuttlecock detection, the court coordinate-mapping approach, and the Gradio WebUI.
+- **Added** the `badmintondataprocess/` research pipeline: from an **uncleaned full broadcast** it automatically cleans usable rallies, then runs calibration, tracking, smoothing and tactical analysis, all while producing auditable, reproducible run records.
+- **Frozen** the upstream `main.py` demo pipeline, kept only as a compatibility entry point with no new algorithmic responsibility.
 
-- Python 3.8+
-- FFmpeg available in system `PATH`
-- Shuttlecock YOLO detection weight, downloaded from [GitHub Releases](https://github.com/yo-WASSUP/Good-Badminton/releases/latest)
+## Our Advantages (vs Upstream)
 
-## Performance Requirements and Reference Speed
+| Dimension | Upstream yo-WASSUP | This Project |
+| --- | --- | --- |
+| **Input** | Clean clips + manual court annotation | Uncleaned full broadcast, auto-cleaned |
+| **Rally segmentation** | None (continuous court view) | Main View gate + Usable Rally segmentation, automatically dropping interviews/replays/close-ups/scoreboards/camera cuts |
+| **Court calibration** | Takes the highest-scoring candidate; misled by green floor / ad-board edges | Hough white-line detection + 13-line support + geometric / reprojection / convexity / temporal-stability multi-frame validation, **explicitly rejecting rather than guessing** when evidence is insufficient |
+| **Shuttlecock detection** | Single-frame YOLO, sparse tracks | TrackNet multi-frame deep detection, ~93% dense visible tracks |
+| **Player localization** | Single-point projection; aerial points introduce systematic bias | RTMPose pose + **dual anchors** (body center / ground contact separated); official metric coordinates come only from ground contact |
+| **Failure semantics** | "finished = success" | Five distinct states — missing / rejected / failed / empty / success — **missing is never faked as valid, failure is never faked as success** |
+| **Reproducibility** | Ad-hoc output paths, no fingerprinting | Run Manifest records config/input/model fingerprints + per-stage inputs/outputs/durations, with breakpoint resume |
+| **Tactical analysis** | None | Hit/landing (physical rule: the shuttle touches the floor exactly once per rally), distance, coverage, court-area occupancy, each metric gated by eligibility |
+| **Engineering** | — | 122 tests; CUDA acceleration (RTMPose player stage ~603s CPU → ~41s CUDA); H.264 browser-compatible export |
 
-Recommended setup:
+## Quick Start
 
-- GPU with 6GB+ VRAM. More VRAM helps with higher-resolution videos and larger pose models.
-- 16GB+ system RAM.
-- SSD storage for output videos, `detections.jsonl`, and visualization images.
-- CPU execution is supported, but pose detection and shuttlecock detection will be much slower. It is best suited for short clips or feature checks.
+### Environment
 
-Actual speed depends on the GPU, video resolution, pose model, preview display, and audio export settings.
+Requires CUDA PyTorch + ONNX Runtime. The repo ships a reproducible Conda environment:
 
-For a 720p video with `--pose-family yolo-pose --yolo-pose-model yolo11n-pose.pt` and `weights/yolo11s-ball.pt`, GPU timing logs are typically close to:
+```powershell
+conda env create -f badmintondataprocess/environment.yml
+conda activate good-badminton
+python -m pip install -e "badmintondataprocess/."
+python -m pip install rtmlib==0.0.16 --no-deps   # avoid clobbering onnxruntime-gpu
+bdp verify
+```
+
+### One-command analysis of an uncleaned broadcast
+
+A single command turns a full broadcast — interviews, replays, close-ups and camera cuts included — into cleaned rallies, calibration, tracks, charts, and a final analysis video:
+
+```powershell
+bdp analyze F:\material\match.mp4 --run-id match_full_analysis
+```
+
+Or use the PowerShell thin entry point (auto-locates the `good-badminton` environment):
+
+```powershell
+.\badmintondataprocess\scripts\run_full_analysis.ps1 `
+  -InputVideo "F:\Good-Badminton\material\example.mp4" `
+  -RunId example_full_analysis
+```
+
+Before the first run on a new machine or new material, do a read-only preflight (checks decoding, config, RTMPose/TrackNet weights and CUDA without creating a run directory):
+
+```powershell
+bdp analyze F:\material\match.mp4 --preflight-only
+```
+
+### Staged pipeline
+
+```bash
+bdp pipeline run raw_videos/match.mp4 --run-id match_manual --config configs/experiments/synthetic_smoke.yaml
+```
+
+The same `run-id` can safely resume an interrupted run; if the source video or config changes, stale artifacts are rejected and `--force` is required to rerun.
+
+## Pipeline Flow
 
 ```text
-pose 0.02s, shuttlecock 0.02s, shuttle draw 0.00s, players draw 0.01s, court draw 0.00s
+raw broadcast -> Main View cleaning -> Usable Rally segmentation -> automatic Validated Calibration
+         -> RTMPose CUDA dual-side skeleton -> TrackNet CUDA -> trajectory smoothing / stats
+         -> charts & tactical diagnostics -> merged H.264 analysis video
 ```
 
-Use `--performance-stats` to print a compact timing summary about every 5 seconds and identify whether the bottleneck is pose inference, shuttlecock detection, or drawing.
-
-## 🚀 Installation
-
-The default dependencies use CPU PyTorch and ONNX Runtime.
-
-### Windows
-
-```bash
-python -m venv .venv
-.\.venv\Scripts\activate
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-### Linux / macOS
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-### GPU Acceleration (Windows / NVIDIA)
-
-Prerequisites:
-
-- NVIDIA driver installed, and `nvidia-smi` works correctly.
-- CUDA 12.1 PyTorch wheels are recommended.
-
-PowerShell:
-
-```bash
-.\.venv\Scripts\activate
-
-pip uninstall -y torch torchvision onnxruntime onnxruntime-gpu
-pip install torch==2.5.1+cu121 torchvision==0.20.1+cu121 --index-url https://download.pytorch.org/whl/cu121
-pip install onnxruntime-gpu==1.20.1
-```
-
-Verify GPU availability:
-
-```bash
-python -c "import torch; print('torch:', torch.__version__); print('cuda:', torch.cuda.is_available()); print('gpu:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'not available')"
-python -c "import onnxruntime as ort; print(ort.__version__); print(ort.get_available_providers())"
-```
-
-Expected output includes:
+Key artifacts:
 
 ```text
-cuda: True
-CUDAExecutionProvider
+runs/<run-id>/analysis_summary.json
+runs/<run-id>/rallies/                          # auto-cleaned usable rallies
+runs/<run-id>/annotations/court_calibration/    # per-rally validated calibration
+runs/<run-id>/annotations/*_tracks_smoothed.csv
+runs/<run-id>/outputs/tracking_charts/
+runs/<run-id>/outputs/demo/badminton_full_analysis.mp4
 ```
 
-> Note: after installing GPU ONNX Runtime, `pip check` may report `rtmlib requires onnxruntime, which is not installed`. If provider verification shows `CUDAExecutionProvider`, do not reinstall CPU `onnxruntime`, because it may overwrite the GPU package.
+## Unified CLI
 
-Switch back to CPU dependencies:
-
-```bash
-pip install --force-reinstall -r requirements.txt
-```
-
-
-### WebUI Installation (Optional)
-
-The WebUI is built with Gradio and requires an additional dependency:
-
-```bash
-pip install -r requirements-webui.txt
-```
-
-Launch the WebUI:
-
-```bash
-python -m webui.app
-```
-
-Open the URL printed in the terminal (default `http://127.0.0.1:7860`) and:
-
-1. Upload a match video and a court template image.
-2. Click "Detect Court" to auto-detect court boundaries. To correct, click 4 corners on the image then click "Apply Manual Corners".
-3. Adjust analysis settings (pose model, language, visualization options, etc.).
-4. Click "Run Analysis" and wait for the progress bar. Results include the annotated video, heatmaps/scatter plots, and detection data.
-
-| Court Detection and Settings | Analysis Results |
-| --- | --- |
-| ![WebUI court detection screen](assets/webui0-en.png) | ![WebUI results screen](assets/webui1-en.png) |
-
-The WebUI is optional — the CLI workflow is unchanged.
-
-## 📝 Usage
-
-### First Run Workflow (CLI)
-
-1. Prepare the input video and shuttlecock detection weight.
-2. Run the basic command:
-
-```bash
-python main.py --video-path videos/demo.mp4
-```
-
-3. If `--template-path` is not provided, the program opens a file picker for a court template image. Usually, choose a stable frame with clear court lines.
-4. The program first tries to detect the court boundary automatically and saves `outputs/<video_name>/auto_court_preview.png`. Press Enter/Y in the preview window to accept it, or press M/R/Esc to switch to manual four-corner annotation.
-5. If manual annotation is used, follow the prompt at the top of the image and click the four court corners in order: top-left, top-right, bottom-right, bottom-left.
-
-![Court annotation example](assets/label_court_example.png)
-
-6. After the four points are selected, the window shows a green court box and a blue pose-detection ROI. The ROI is generated automatically from the court area.
-7. The annotation is saved to `outputs/<video_name>/court_annotations.txt`. Re-running with the same output directory reuses this file.
-8. After analysis finishes, check `outputs/<video_name>/detect_<video_name>.mp4`, `detections.jsonl`, and `position_visualizations/`.
-
-Why four court points are required:
-
-- The four corners establish the mapping from image coordinates to standard badminton court coordinates.
-- Player filtering mainly depends on court coordinates, which helps remove spectators, referees, and people outside the court.
-- Upper/lower court player assignment, movement distance, speed, rally statistics, heatmaps, and scatter plots all depend on this mapping.
-- Rally detection uses court template matching: consecutive court-view frames start a rally, and consecutive non-court-view frames end it.
-- The pose ROI only reduces the inference area and improves speed. It is automatically expanded from the court area.
-- Shuttlecock detection still runs on the full frame, with basic filtering based on the horizontal court range plus padding.
-
-If the video angle, crop, or template image changes, delete the corresponding `court_annotations.txt` and annotate the four points again.
-
-
-### Pose Model Selection
-
-```bash
-# Default: two-stage RTMPose balanced
-python main.py --video-path videos/demo.mp4 --pose-family rtmpose --pose-mode balanced
-
-# Lighter one-stage RTMO
-python main.py --video-path videos/demo.mp4 --pose-family rtmo --pose-mode lightweight
-
-# Use Ultralytics YOLO Pose
-python main.py --video-path videos/demo.mp4 --pose-family yolo-pose --yolo-pose-model yolo11n-pose.pt
-```
-
-RTMPose / RTMO modes:
-
-- `lightweight`: prioritizes speed.
-- `balanced`: default tradeoff between speed and quality.
-- `performance`: larger model, slower, usually better for detection quality.
-
-### Common Arguments
+The CLI, batch runner and WebUI share a single pipeline interface — there is no second, semantically different implementation:
 
 ```text
---video-path                 Input video path, required
---output-dir                 Output directory, default outputs/<video_name>
---ball-model                 YOLO shuttlecock detection model path, default weights/yolo11s-ball.pt
---pose-family                Pose model family: rtmpose, rtmo, or yolo-pose
---pose-mode                  RTMPose / RTMO mode: lightweight, balanced, performance
---yolo-pose-model            YOLO pose model path or model name, default yolo11n-pose.pt
---template-path              Court template image path; opens a file picker if omitted
---pose-roi true|false                Show pose-detection ROI box, default true
---display true|false                 Show OpenCV preview window, default true
---skeletons true|false               Show human skeletons, default true
---player-trajectories true|false     Show player trajectories, default true
---court-trajectory true|false        Show court trajectory overlay, default true
---shuttlecock-trajectory true|false  Show shuttlecock trajectory, default true
---player-stats true|false            Show player statistics, default true
---performance-stats                  Print performance timings
---save-images                        Save processed frame images
---visualize-positions true|false     Generate heatmaps and scatter plots, default true
---audio true|false                   Keep original video audio, default true
---language {zh,en}                   Visualization language
+bdp analyze <video>             # one-command full-broadcast analysis
+bdp pipeline run / batch        # staged / batch runs
+bdp rally segment               # rally segmentation
+bdp calibrate                   # court calibration
+bdp track players / shuttle     # player / shuttle tracking
+bdp smooth                      # trajectory smoothing
+bdp tactics analyze             # tactical analysis
+bdp render demo                 # demo-video re-render
+bdp compare trackers            # tracker comparison
+bdp webui                       # browser interface
+bdp verify                      # environment self-check
 ```
 
-## 📊 Outputs
-
-Default output directory: `outputs/<video_name>/`.
-
-- `metadata.json`: metadata for video, models, court annotation, and output files.
-- `detections.jsonl`: per-frame detection records, including rally ID, players, hands, court coordinates, speed, and shuttlecock coordinates.
-- `detect_<video_name>.mp4`: annotated output video with skeletons, trajectories, statistics, and rally IDs.
-- `court_annotations.txt`: cached court annotation coordinates.
-- `position_visualizations/heatmaps/`: player position heatmaps.
-- `position_visualizations/scatter_plots/`: player position scatter plots.
-
-### Position Visualization Examples
-
-| Heatmap | Scatter Plot |
-| --- | --- |
-| ![Player position heatmap example](assets/match_heatmap_en.png) | ![Player position scatter plot example](assets/match_scatter_en.png) |
-
-## 🧩 Project Structure
+## Repository Layout
 
 ```text
-main.py              # CLI entry and argument parsing; keeps python main.py ... usage
-badminton_analysis/
-├── system.py        # Main video analysis pipeline: BadmintonAnalysisSystem
-├── court/           # Court annotation and coordinate mapping
-├── data/            # JSON / JSONL output
-├── detection/       # Shuttlecock detection and pose detection
-├── media/           # Video/audio processing
-├── tracking/        # Player tracking
-└── visualization/   # Video overlays, statistics charts, and position plots
-webui/
-├── app.py           # Gradio WebUI interface and launch entry point
-└── pipeline.py      # WebUI analysis pipeline orchestration
+badmintondataprocess/
+├── src/badminton_data_process/   # research pipeline package (core / main_view / rally /
+│                                 #   calibration / tracking / smoothing /
+│                                 #   tactics / visualization / media / webui)
+├── scripts/                      # compat entry points + one-click PowerShell script
+├── configs/                      # default / experiments / production (full_video_gpu)
+├── tests/                        # 122 tests
+└── docs/                         # architecture, migration and implementation plans
 ```
 
-## Acknowledgements
+## Scope and Limits (an honest statement)
 
-Thanks to the RTMPose, RTMO, and OpenMMLab ecosystem for the pose-estimation foundations, and to [Tau-J/rtmlib](https://github.com/Tau-J/rtmlib) for the lightweight pose-estimation runtime.
+- Dual-side player localization (near/far court roles) and hit/landing events are **experimental**; they do not imply stable athlete identity or full tactical conclusions. Near-side localization is the currently prioritized, validated scope.
+- The demo video is a **Diagnostic Demo** for debugging and displaying validated artifacts, not evidence of model correctness.
+- The frozen annotation set (Main View / rally / court corners / player foot points / shuttle ground truth) is still under construction; precision / recall / ID-switch metrics have not yet been baselined against real annotations.
 
-Thanks to [Ultralytics](https://github.com/ultralytics/ultralytics) for the YOLO object-detection algorithms and tooling.
+## Acknowledgements and License
 
-Thanks to [yastrebksv/TrackNet](https://github.com/yastrebksv/TrackNet) for organizing and releasing badminton datasets, which provided important references for shuttlecock detection and trajectory analysis in this project.
+Thanks to upstream [yo-WASSUP/Good-Badminton](https://github.com/yo-WASSUP/Good-Badminton) and its contributors, and to RTMPose / RTMO / OpenMMLab, [rtmlib](https://github.com/Tau-J/rtmlib), [Ultralytics](https://github.com/ultralytics/ultralytics) and [TrackNet](https://github.com/yastrebksv/TrackNet) for the algorithmic and data foundations.
 
-## 📄 License
-
-Project code and `weights/yolo11s-ball.pt` are licensed under Apache License 2.0. RTMPose / RTMO / YOLOX ONNX weights provided in Releases come from the OpenMMLab / RTMPose ecosystem, are used under their upstream Apache License 2.0, and retain their original attribution.
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=yo-WASSUP/Good-Badminton&type=Date)](https://www.star-history.com/#yo-WASSUP/Good-Badminton&Date)
-
+This project follows the upstream Apache License 2.0.

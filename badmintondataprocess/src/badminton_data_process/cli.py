@@ -12,6 +12,7 @@ from badminton_data_process.metadata.download import main as download_main
 from badminton_data_process.metadata.matches import main as metadata_validate_main
 from badminton_data_process.metadata.register import main as metadata_register_main
 from badminton_data_process.pipeline.batch import main as pipeline_batch_main
+from badminton_data_process.pipeline.full import main as full_analysis_main
 from badminton_data_process.pipeline.run import main as pipeline_run_main
 from badminton_data_process.rally.segmentation import main as rally_segment_main
 from badminton_data_process.review.main_view import main as review_main_view_main
@@ -21,6 +22,8 @@ from badminton_data_process.tracking.player.tracking import main as track_player
 from badminton_data_process.tracking.shuttle.tracking import main as track_shuttle_main
 from badminton_data_process.video.preprocess import main as preprocess_main
 from badminton_data_process.visualization.tracking import main as visualize_main
+from badminton_data_process.visualization.demo import main as render_demo_main
+from badminton_data_process.webui.app import main as webui_main
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -35,7 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Commands: metadata validate/register-local, download, preprocess, rally segment, "
             "main-view analyze/export, review main-view, calibrate, track players, "
             "track shuttle, smooth, visualize, tactics analyze, compare trackers, "
-            "pipeline run/batch, verify"
+            "render demo, analyze, pipeline run/batch, webui, verify"
         ),
     )
     return parser
@@ -75,14 +78,20 @@ def main(argv: list[str] | None = None) -> int:
         return visualize_main(argv[1:])
     if argv[:2] == ["tactics", "analyze"]:
         return tactics_main(argv[2:])
+    if argv[:2] == ["render", "demo"]:
+        return render_demo_main(argv[2:])
     if argv[:2] == ["compare", "trackers"]:
         return compare_trackers_main(argv[2:])
     if argv[:2] == ["pipeline", "batch"]:
         return pipeline_batch_main(argv[2:])
     if argv[:2] == ["pipeline", "run"]:
         return pipeline_run_main(argv[2:])
+    if argv[0] == "analyze":
+        return full_analysis_main(argv[1:])
     if argv[0] == "verify":
         return verify_main(argv[1:])
+    if argv[0] == "webui":
+        return webui_main()
 
     print(f"Unknown command: {' '.join(argv)}", file=sys.stderr)
     build_parser().print_help()

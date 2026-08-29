@@ -35,6 +35,13 @@ weights/*
 *.pth
 *.onnx
 
+# Generated preprocess probe metadata (absolute-path local data)
+badmintondataprocess/metadata/preprocessed/
+
+# Raw match videos dropped by hand; material/ is the designated raw-input dir.
+# demo*.mp4 were committed before this rule and stay tracked.
+videos/*.mp4
+
 # OS and editor files
 .DS_Store
 Thumbs.db

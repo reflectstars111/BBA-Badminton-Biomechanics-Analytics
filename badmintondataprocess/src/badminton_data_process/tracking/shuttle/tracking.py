@@ -232,13 +232,14 @@ def process_video_tracknet(
     debug_dir: Path,
     tracknet_weights: str,
     max_missing_frames: int,
+    device: str = 'auto',
     vis_threshold: float = 0.15,
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
     """Track the shuttle using a TrackNet multi-frame detector."""
     from badminton_data_process.tracking.shuttle.tracknet import TrackNetDetector
 
     require_opencv()
-    detector = TrackNetDetector(tracknet_weights, vis_threshold=vis_threshold)
+    detector = TrackNetDetector(tracknet_weights, device=device, vis_threshold=vis_threshold)
     capture = cv2.VideoCapture(str(video_path))
     if not capture.isOpened():
         return [], {
@@ -370,6 +371,7 @@ def process_video(
     speed_weight: float,
     model: str = 'motion_bright_baseline',
     tracknet_weights: str = '',
+    tracknet_device: str = 'auto',
     tracknet_vis_threshold: float = 0.15,
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
     if model == 'tracknet':
@@ -379,6 +381,7 @@ def process_video(
             debug_dir=debug_dir,
             tracknet_weights=tracknet_weights,
             max_missing_frames=max_missing_frames,
+            device=tracknet_device,
             vis_threshold=tracknet_vis_threshold,
         )
     require_opencv()
@@ -539,6 +542,7 @@ def track_shuttle(
     speed_weight: float,
     model: str = 'motion_bright_baseline',
     tracknet_weights: str = '',
+    tracknet_device: str = 'auto',
     tracknet_vis_threshold: float = 0.15,
 ) -> int:
     videos = iter_video_paths(input_path)
@@ -561,6 +565,7 @@ def track_shuttle(
             speed_weight=speed_weight,
             model=model,
             tracknet_weights=tracknet_weights,
+            tracknet_device=tracknet_device,
             tracknet_vis_threshold=tracknet_vis_threshold,
         )
         all_rows.extend(rows)
@@ -678,6 +683,12 @@ def build_parser() -> argparse.ArgumentParser:
         help='Path to the TrackNet checkpoint (required when --model tracknet).',
     )
     parser.add_argument(
+        '--tracknet-device',
+        choices=['auto', 'cpu', 'cuda'],
+        default='auto',
+        help='TrackNet inference device. Explicit cuda fails instead of silently using CPU.',
+    )
+    parser.add_argument(
         '--tracknet-vis-threshold',
         type=float,
         default=0.15,
@@ -705,6 +716,7 @@ def main(argv: list[str] | None = None) -> int:
         speed_weight=args.speed_weight,
         model=args.model,
         tracknet_weights=args.tracknet_weights,
+        tracknet_device=args.tracknet_device,
         tracknet_vis_threshold=args.tracknet_vis_threshold,
     )
 

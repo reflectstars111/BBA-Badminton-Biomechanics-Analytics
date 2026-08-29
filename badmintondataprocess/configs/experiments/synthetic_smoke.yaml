@@ -15,4 +15,5 @@ rally_segmentation:
 
 player_tracking:
   detector: heuristic
-
+  roles:
+    - near

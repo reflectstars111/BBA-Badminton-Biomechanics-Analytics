@@ -14,12 +14,14 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
 from common import ensure_dir, read_csv_rows
+from badminton_data_process.calibration.reference import (
+    COURT_LENGTH_M as COURT_LENGTH,
+    COURT_WIDTH_M as COURT_WIDTH,
+    DOUBLES_LONG_SERVICE_FROM_BASELINE_M as LONG_SERVICE_FROM_BACK,
+    NET_Y_M as NET_Y,
+    SHORT_SERVICE_FROM_NET_M as SHORT_SERVICE_LINE,
+)
 
-COURT_WIDTH = 6.10
-COURT_LENGTH = 13.40
-NET_Y = COURT_LENGTH / 2.0
-SHORT_SERVICE_LINE = 1.98
-LONG_SERVICE_FROM_BACK = 0.76
 CENTER_X = COURT_WIDTH / 2.0
 
 
@@ -437,10 +439,16 @@ def save_shuttle_trajectory_samples(
         scored_rows.append((ratio, row))
     scored_rows.sort(key=lambda item: item[0])
 
-    selected = [row for _, row in scored_rows[:3]] + [row for _, row in scored_rows[-3:]]
+    selected = []
+    selected_keys: set[tuple[str, str]] = set()
+    for _, row in scored_rows[:3] + scored_rows[-3:]:
+        key = (row.get('video_stem', ''), row.get('rally_id', ''))
+        if key not in selected_keys:
+            selected.append(row)
+            selected_keys.add(key)
     fig, axes = plt.subplots(2, 3, figsize=(15, 8))
     axes_flat = list(axes.flat)
-    for axis, summary_row in zip(axes_flat, selected, strict=True):
+    for axis, summary_row in zip(axes_flat, selected):
         video_stem = summary_row.get('video_stem', '')
         points = []
         for row in grouped_rows.get(video_stem, []):
@@ -596,24 +604,28 @@ def main() -> int:
                 min_confidence=args.player_min_confidence,
             )
             if player_points:
+                tracked_player_ids = {point['player_id'] for point in player_points}
                 save_player_overall_topdown(
                     player_points=player_points,
                     output_path=output_dir / 'player_movement_topdown.png',
                 )
-                save_standardized_halfcourt_heatmap(
-                    player_points=player_points,
-                    player_id='near',
-                    output_path=output_dir / 'player_near_standardized_halfcourt_heatmap.png',
-                )
-                save_standardized_halfcourt_heatmap(
-                    player_points=player_points,
-                    player_id='far',
-                    output_path=output_dir / 'player_far_standardized_halfcourt_heatmap.png',
-                )
-                save_standardized_fullcourt_split_compare(
-                    player_points=player_points,
-                    output_path=output_dir / 'player_standardized_fullcourt_split_compare.png',
-                )
+                if 'near' in tracked_player_ids:
+                    save_standardized_halfcourt_heatmap(
+                        player_points=player_points,
+                        player_id='near',
+                        output_path=output_dir / 'player_near_standardized_halfcourt_heatmap.png',
+                    )
+                if 'far' in tracked_player_ids:
+                    save_standardized_halfcourt_heatmap(
+                        player_points=player_points,
+                        player_id='far',
+                        output_path=output_dir / 'player_far_standardized_halfcourt_heatmap.png',
+                    )
+                if {'near', 'far'} <= tracked_player_ids:
+                    save_standardized_fullcourt_split_compare(
+                        player_points=player_points,
+                        output_path=output_dir / 'player_standardized_fullcourt_split_compare.png',
+                    )
 
                 selected_rally_id = None
                 if args.player_smoothing_summary_csv is not None:

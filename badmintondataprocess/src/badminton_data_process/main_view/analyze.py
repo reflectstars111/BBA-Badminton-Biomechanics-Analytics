@@ -3,13 +3,16 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from badminton_data_process.core.config import load_config
+from badminton_data_process.core.config_schema import parse_config
 from badminton_data_process.core.io import ensure_dir, write_csv_rows, write_json
-from badminton_data_process.core.paths import discover_project_root
+from badminton_data_process.core.paths import RunLayout, discover_project_root
 from badminton_data_process.core.run import make_run_id
 from badminton_data_process.core.schemas import (
     MAIN_VIEW_FRAME_FIELDS,
     MAIN_VIEW_QUALITY_FIELDS,
     MAIN_VIEW_SEGMENT_FIELDS,
+    MainViewLabel,
     REJECTED_SEGMENT_FIELDS,
 )
 from badminton_data_process.main_view.scoring import FrameScore, require_opencv, score_frame
@@ -58,7 +61,7 @@ def contiguous_segments(
             "start_time": round(start / fps, 3),
             "end_time": round(end / fps, 3),
             "duration_seconds": round((end - start) / fps, 3),
-            "label": "MAIN_BIRDSEYE_LIVE",
+            "label": MainViewLabel.MAIN_VIEW.value,
             "main_view_score": round(sum(s.main_view_score for s in items) / len(items), 4),
             "court_score": round(sum(s.court_score for s in items) / len(items), 4),
             "geometry_score": round(sum(s.geometry_score for s in items) / len(items), 4),
@@ -137,7 +140,7 @@ def analyze_main_view(
     if not capture.isOpened():
         raise RuntimeError(f"Cannot open video: {input_video}")
     fps = capture.get(cv2.CAP_PROP_FPS) or 30.0
-    frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    reported_frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
     output_dir = ensure_dir(output_dir)
     keyframe_dir = ensure_dir(output_dir / "keyframes")
     ensure_dir(output_dir / "rejected")
@@ -160,9 +163,25 @@ def analyze_main_view(
             cv2.imwrite(str(keyframe_dir / f"frame_{frame_index:08d}.jpg"), frame)
         frame_index += 1
     capture.release()
+    frame_count = frame_index if frame_index > 0 else reported_frame_count
 
     frame_rows = [score.to_row() for score in scores]
     segment_rows = contiguous_segments(scores, fps, sample_every, min_segment_seconds, max_gap_seconds)
+    for row in segment_rows:
+        row["end_frame"] = min(int(row["end_frame"]), frame_count)
+        row["end_time"] = round(int(row["end_frame"]) / fps, 3)
+        row["duration_seconds"] = round(
+            (int(row["end_frame"]) - int(row["start_frame"])) / fps,
+            3,
+        )
+    min_segment_frames = int(min_segment_seconds * fps)
+    segment_rows = [
+        row
+        for row in segment_rows
+        if int(row["end_frame"]) - int(row["start_frame"]) >= min_segment_frames
+    ]
+    for index, row in enumerate(segment_rows, start=1):
+        row["segment_id"] = f"{index:03d}"
     reject_rows = rejected_segments(scores, fps, sample_every)
     quality_rows = [
         {
@@ -205,6 +224,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("input", type=Path)
     parser.add_argument("--run-id", default=None)
     parser.add_argument("--output-dir", type=Path, default=None)
+    parser.add_argument("--config", type=Path, default=None)
+    parser.add_argument("--runs-dir", type=Path, default=None)
     parser.add_argument("--sample-every", type=int, default=30)
     parser.add_argument("--threshold", type=float, default=0.75)
     parser.add_argument("--min-segment-seconds", type=float, default=3.0)
@@ -216,7 +237,13 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     root = discover_project_root()
     run_id = args.run_id or make_run_id("main_view")
-    output_dir = args.output_dir or root / "runs" / run_id / "main_view"
+    cfg = parse_config(load_config(args.config, root=root))
+    layout = RunLayout.create(
+        root,
+        run_id,
+        args.runs_dir if args.runs_dir is not None else cfg.data.runs_dir,
+    )
+    output_dir = args.output_dir or layout.main_view_dir
     return analyze_main_view(
         input_video=args.input,
         output_dir=output_dir,
@@ -225,4 +252,3 @@ def main(argv: list[str] | None = None) -> int:
         min_segment_seconds=args.min_segment_seconds,
         max_gap_seconds=args.max_gap_seconds,
     )
-

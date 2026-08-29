@@ -1,0 +1,16 @@
+# RTMPose research profile. If explicit ONNX paths are left blank, rtmlib
+# resolves its balanced model assets through its own cache.
+player_tracking:
+  detector: rtmpose
+  roles:
+    - near
+    - far
+  pose_keypoint_confidence: 0.35
+  pose_min_keypoints: 5
+  rtmpose_mode: balanced
+  rtmpose_backend: onnxruntime
+  rtmpose_device: auto
+  rtmpose_detector_model: ""
+  rtmpose_pose_model: ""
+  rtmpose_detector_input_size: [416, 416]
+  rtmpose_pose_input_size: [192, 256]

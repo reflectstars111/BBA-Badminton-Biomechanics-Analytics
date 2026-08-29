@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from badminton_data_process.main_view.analyze import contiguous_segments
+from badminton_data_process.core.schemas import MainViewLabel, parse_main_view_label
 from badminton_data_process.main_view.scoring import FrameScore, geometry_score
 from badminton_data_process.review.main_view import choose_reject_reason, projection_quality
 
@@ -42,6 +43,15 @@ def test_contiguous_segments_merges_small_gaps_and_filters_short_segments() -> N
     assert len(segments) == 1
     assert segments[0]["start_frame"] == 0
     assert segments[0]["end_frame"] == 180
+    assert segments[0]["label"] == MainViewLabel.MAIN_VIEW.value
+
+
+def test_legacy_main_view_labels_are_normalized_at_the_compatibility_adapter() -> None:
+    assert parse_main_view_label("MAIN_LIVE_VIEW") == MainViewLabel.MAIN_VIEW
+    assert parse_main_view_label("MAIN_BIRDSEYE_LIVE") == MainViewLabel.MAIN_VIEW
+    assert parse_main_view_label("MAIN_VIEW") == MainViewLabel.MAIN_VIEW
+    with pytest.raises(ValueError, match="Unsupported Main View label"):
+        parse_main_view_label("REPLAY")
 
 
 def test_projection_quality_rejects_absurd_court_coordinates() -> None:

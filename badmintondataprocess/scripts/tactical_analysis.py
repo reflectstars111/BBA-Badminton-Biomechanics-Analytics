@@ -7,19 +7,28 @@ from collections import defaultdict
 from pathlib import Path
 
 from common import ensure_dir, read_csv_rows, write_csv_rows
+from badminton_data_process.calibration.reference import COURT_LENGTH_M, COURT_WIDTH_M, NET_Y_M
 
-COURT_WIDTH_M = 6.1
-COURT_LENGTH_M = 13.4
-NET_Y_M = 6.7
 FRONT_DEPTH_M = 2.5
 BACK_DEPTH_M = 4.5
+MAX_METRIC_FRAME_GAP = 1
+MAX_PLAYER_SPEED_M_S = 12.0
 
 TACTICS_SUMMARY_FIELDS = [
     'video_path',
     'video_stem',
     'rally_id',
     'player_id',
+    'analysis_mode',
+    'event_eligibility',
+    'event_reject_reason',
     'frames_valid',
+    'rejected_position_rows',
+    'movement_eligibility',
+    'movement_reject_reason',
+    'distance_steps',
+    'discontinuity_count',
+    'movement_duration_seconds',
     'total_distance_m',
     'avg_speed_m_s',
     'coverage_area_m2',
@@ -28,9 +37,17 @@ TACTICS_SUMMARY_FIELDS = [
     'front_court_ratio',
     'mid_court_ratio',
     'back_court_ratio',
+    'reversal_candidate_count',
     'hit_count',
     'landing_count',
 ]
+
+ANALYSIS_MODES = ('auto', 'near_only', 'experimental_two_player')
+EVENT_NOT_ELIGIBLE = 'not_eligible'
+EVENT_EXPERIMENTAL = 'experimental'
+NEAR_ONLY_EVENT_REASON = 'near_only_analysis_does_not_support_hit_or_landing_events'
+MISSING_ROLES_EVENT_REASON = 'event_analysis_requires_near_and_far_player_tracks'
+NO_CONTIGUOUS_MOVEMENT_REASON = 'no_contiguous_plausible_movement_steps'
 
 TACTICS_EVENT_FIELDS = [
     'video_path',
@@ -40,8 +57,11 @@ TACTICS_EVENT_FIELDS = [
     'timestamp',
     'event_type',
     'player_id',
+    'image_x',
+    'image_y',
     'court_x',
     'court_y',
+    'event_eligibility',
 ]
 
 
@@ -52,6 +72,35 @@ def parse_float(value: str | None) -> float | None:
         return float(value)
     except ValueError:
         return None
+
+
+def filter_events_for_tracked_players(
+    events: list[dict[str, object]],
+    tracked_player_ids: set[str],
+) -> list[dict[str, object]]:
+    return [event for event in events if event.get('player_id') in tracked_player_ids]
+
+
+def resolve_event_eligibility(
+    analysis_mode: str,
+    tracked_player_ids: set[str],
+) -> tuple[str, str, str]:
+    if analysis_mode not in ANALYSIS_MODES:
+        raise ValueError(
+            f'Unsupported analysis mode {analysis_mode!r}; expected one of {ANALYSIS_MODES}'
+        )
+    resolved_mode = analysis_mode
+    if analysis_mode == 'auto':
+        resolved_mode = (
+            'experimental_two_player'
+            if {'near', 'far'} <= tracked_player_ids
+            else 'near_only'
+        )
+    if resolved_mode == 'near_only':
+        return resolved_mode, EVENT_NOT_ELIGIBLE, NEAR_ONLY_EVENT_REASON
+    if not {'near', 'far'} <= tracked_player_ids:
+        return resolved_mode, EVENT_NOT_ELIGIBLE, MISSING_ROLES_EVENT_REASON
+    return resolved_mode, EVENT_EXPERIMENTAL, ''
 
 
 def load_homography(calibration_dir: Path, video_stem: str) -> list[list[float]] | None:
@@ -141,7 +190,8 @@ def _zone_for_depth(depth: float) -> str:
 
 
 def player_metrics(player_id: str, rows: list[dict[str, str]]) -> dict[str, object] | None:
-    points: list[tuple[int, float, float, float]] = []
+    points: list[tuple[int, float | None, float, float]] = []
+    rejected_position_rows = 0
     for row in rows:
         court = _court_point(row)
         if court is None:
@@ -150,17 +200,40 @@ def player_metrics(player_id: str, rows: list[dict[str, str]]) -> dict[str, obje
             frame_id = int(row['frame_id'])
         except (KeyError, ValueError):
             continue
-        timestamp = parse_float(row.get('timestamp')) or 0.0
+        on_court = 0.0 <= court[0] <= COURT_WIDTH_M and 0.0 <= court[1] <= COURT_LENGTH_M
+        on_player_side = court[1] >= NET_Y_M if player_id == 'near' else court[1] <= NET_Y_M
+        if not on_court or not on_player_side:
+            rejected_position_rows += 1
+            continue
+        timestamp = parse_float(row.get('timestamp'))
         points.append((frame_id, timestamp, court[0], court[1]))
     if not points:
         return None
     points.sort(key=lambda p: p[0])
 
     total_distance = 0.0
+    movement_duration = 0.0
+    distance_steps = 0
+    discontinuity_count = 0
     for i in range(1, len(points)):
-        total_distance += math.hypot(points[i][2] - points[i - 1][2], points[i][3] - points[i - 1][3])
-    duration = points[-1][1] - points[0][1]
-    avg_speed = total_distance / duration if duration > 0 else 0.0
+        previous = points[i - 1]
+        current = points[i]
+        frame_gap = current[0] - previous[0]
+        if previous[1] is None or current[1] is None:
+            discontinuity_count += 1
+            continue
+        time_gap = current[1] - previous[1]
+        if frame_gap <= 0 or frame_gap > MAX_METRIC_FRAME_GAP or time_gap <= 0:
+            discontinuity_count += 1
+            continue
+        step_distance = math.hypot(current[2] - previous[2], current[3] - previous[3])
+        if step_distance / time_gap > MAX_PLAYER_SPEED_M_S:
+            discontinuity_count += 1
+            continue
+        total_distance += step_distance
+        movement_duration += time_gap
+        distance_steps += 1
+    avg_speed = total_distance / movement_duration if movement_duration > 0 else 0.0
 
     court_points = [(p[2], p[3]) for p in points]
     coverage_area = polygon_area(convex_hull(court_points))
@@ -172,11 +245,18 @@ def player_metrics(player_id: str, rows: list[dict[str, str]]) -> dict[str, obje
     for p in points:
         zones[_zone_for_depth(_own_side_depth(player_id, p[3]))] += 1
     count = len(points)
+    movement_eligible = distance_steps > 0
 
     return {
         'frames_valid': count,
-        'total_distance_m': round(total_distance, 3),
-        'avg_speed_m_s': round(avg_speed, 3),
+        'rejected_position_rows': rejected_position_rows,
+        'movement_eligibility': 'eligible' if movement_eligible else EVENT_NOT_ELIGIBLE,
+        'movement_reject_reason': '' if movement_eligible else NO_CONTIGUOUS_MOVEMENT_REASON,
+        'distance_steps': distance_steps,
+        'discontinuity_count': discontinuity_count,
+        'movement_duration_seconds': round(movement_duration, 3),
+        'total_distance_m': round(total_distance, 3) if movement_eligible else '',
+        'avg_speed_m_s': round(avg_speed, 3) if movement_eligible else '',
         'coverage_area_m2': round(coverage_area, 3),
         'mean_court_x': round(mean_x, 3),
         'mean_court_y': round(mean_y, 3),
@@ -189,12 +269,16 @@ def player_metrics(player_id: str, rows: list[dict[str, str]]) -> dict[str, obje
 def shuttle_image_points(rows: list[dict[str, str]]) -> list[dict[str, object]]:
     points: list[dict[str, object]] = []
     for row in rows:
-        # Only real detections; the smoothed columns carry a stale value across
-        # invisible stretches.
-        if row.get('x') in (None, '') or row.get('y') in (None, ''):
-            continue
-        x = parse_float(row.get('smoothed_x') or row.get('x'))
-        y = parse_float(row.get('smoothed_y') or row.get('y'))
+        if 'is_smoothed_valid' in row:
+            if row.get('is_smoothed_valid') not in ('1', 'true', 'True'):
+                continue
+            x = parse_float(row.get('smoothed_x') or row.get('x'))
+            y = parse_float(row.get('smoothed_y') or row.get('y'))
+        else:
+            if row.get('visibility', '1') in ('0', 'false', 'False'):
+                continue
+            x = parse_float(row.get('x'))
+            y = parse_float(row.get('y'))
         if x is None or y is None:
             continue
         try:
@@ -229,6 +313,11 @@ def detect_strikes(
         return []
     turns: list[dict[str, object]] = []
     for i in range(1, len(image_points) - 1):
+        previous_frame = int(image_points[i - 1]['frame_id'])
+        current_frame = int(image_points[i]['frame_id'])
+        next_frame = int(image_points[i + 1]['frame_id'])
+        if current_frame - previous_frame != 1 or next_frame - current_frame != 1:
+            continue
         v1 = (
             float(image_points[i]['image_x']) - float(image_points[i - 1]['image_x']),
             float(image_points[i]['image_y']) - float(image_points[i - 1]['image_y']),
@@ -308,10 +397,6 @@ def build_player_series(
     return series
 
 
-def _side_owner(court_y: float) -> str:
-    return 'near' if court_y >= NET_Y_M else 'far'
-
-
 def analyze_rally_events(
     video_path: str,
     video_stem: str,
@@ -323,80 +408,53 @@ def analyze_rally_events(
     merge_frames: int,
     hit_distance_px: float,
 ) -> tuple[list[dict[str, object]], dict[str, int], dict[str, int]]:
+    """Emit experimental image-space reversal candidates, never formal hits/landings.
+
+    The homography argument is retained as an Adapter seam for legacy callers. An
+    airborne shuttle cannot be projected onto the court plane as a formal event
+    coordinate, so this Implementation deliberately does not consume it.
+    """
     events: list[dict[str, object]] = []
-    hit_counts: dict[str, int] = defaultdict(int)
-    landing_counts: dict[str, int] = defaultdict(int)
+    candidate_counts: dict[str, int] = defaultdict(int)
 
-    if h is not None:
-        strikes = detect_strikes(shuttle_image_points(shuttle_rows), turn_angle_deg, merge_frames)
-        for index, strike in enumerate(strikes):
-            frame_id = int(strike['frame_id'])
-            event_type = 'hit'
-            court_x: float | None = None
-            court_y: float | None = None
-
-            shuttle_court = image_to_court(float(strike['image_x']), float(strike['image_y']), h)
-            in_court = shuttle_court is not None and (
-                0.0 <= shuttle_court[0] <= COURT_WIDTH_M and 0.0 <= shuttle_court[1] <= COURT_LENGTH_M
-            )
-            if index == len(strikes) - 1 and in_court:
-                # The shuttle touches the ground exactly once per rally, at
-                # the end. An airborne shuttle's ground projection also falls
-                # in-court, so the old in-court test flipped nearly every
-                # racket strike into a "landing" (203 vs 21). Only the rally's
-                # final reversal, with the shuttle at ground level (h=0), is a
-                # reliable bounce.
-                event_type = 'landing'
-                court_x, court_y = shuttle_court
-            else:
-                # A strike at racket height. Prefer the nearest player's court
-                # position as the hit point when attribution is confident;
-                # otherwise fall back to the shuttle's own (approximate)
-                # projection, which for an airborne shuttle is distorted but
-                # bounded.
-                best = None
-                for pid, series in player_series.items():
-                    px = _interp(series['frames'], series['image_x'], frame_id)
-                    py = _interp(series['frames'], series['image_y'], frame_id)
-                    if px is None or py is None:
-                        continue
-                    dist = math.hypot(float(strike['image_x']) - px, float(strike['image_y']) - py)
-                    if best is None or dist < best[0]:
-                        best = (dist, pid)
-                if best is not None and best[0] < hit_distance_px:
-                    player_id = best[1]
-                    cx = _interp(player_series[player_id]['frames'], player_series[player_id]['court_x'], frame_id)
-                    cy = _interp(player_series[player_id]['frames'], player_series[player_id]['court_y'], frame_id)
-                    if cx is not None and cy is not None:
-                        court_x, court_y = cx, cy
-                if court_x is None:
-                    court_x, court_y = shuttle_court if shuttle_court is not None else (None, None)
-                if court_x is None:
-                    continue
-
-            if shuttle_court is not None:
-                player_id = _side_owner(shuttle_court[1])
-            events.append(
-                {
-                    'frame_id': frame_id,
-                    'timestamp': strike['timestamp'],
-                    'event_type': event_type,
-                    'player_id': player_id,
-                    'court_x': round(court_x, 3),
-                    'court_y': round(court_y, 3),
-                }
-            )
-            if event_type == 'hit':
-                hit_counts[player_id] += 1
-            else:
-                landing_counts[player_id] += 1
+    strikes = detect_strikes(shuttle_image_points(shuttle_rows), turn_angle_deg, merge_frames)
+    for strike in strikes:
+        frame_id = int(strike['frame_id'])
+        best: tuple[float, str] | None = None
+        for player_id, series in player_series.items():
+            frames = [int(value) for value in series['frames']]
+            if frame_id not in frames:
+                continue
+            sample_index = frames.index(frame_id)
+            px = float(series['image_x'][sample_index])
+            py = float(series['image_y'][sample_index])
+            distance = math.hypot(float(strike['image_x']) - px, float(strike['image_y']) - py)
+            if best is None or distance < best[0]:
+                best = (distance, player_id)
+        if best is None or best[0] >= hit_distance_px:
+            continue
+        player_id = best[1]
+        events.append(
+            {
+                'frame_id': frame_id,
+                'timestamp': strike['timestamp'],
+                'event_type': 'reversal_candidate',
+                'player_id': player_id,
+                'image_x': round(float(strike['image_x']), 3),
+                'image_y': round(float(strike['image_y']), 3),
+                'court_x': '',
+                'court_y': '',
+                'event_eligibility': EVENT_EXPERIMENTAL,
+            }
+        )
+        candidate_counts[player_id] += 1
 
     events.sort(key=lambda e: (int(e['frame_id']), e['event_type']))
     for event in events:
         event['video_path'] = video_path
         event['video_stem'] = video_stem
         event['rally_id'] = rally_id
-    return events, dict(hit_counts), dict(landing_counts)
+    return events, dict(candidate_counts), {}
 
 
 def analyze_tactics(
@@ -407,6 +465,7 @@ def analyze_tactics(
     hit_distance_px: float = 80.0,
     turn_angle_deg: float = 100.0,
     min_event_gap_frames: int = 15,
+    analysis_mode: str = 'auto',
 ) -> dict[str, object]:
     output_dir = ensure_dir(output_dir)
 
@@ -423,25 +482,40 @@ def analyze_tactics(
     rally_keys = sorted(set(player_rally_groups) | set(shuttle_rally_groups))
     summary_rows: list[dict[str, object]] = []
     event_rows: list[dict[str, object]] = []
+    not_eligible_rallies = 0
 
     for key in rally_keys:
         video_path, video_stem, rally_id = key
         players = player_rally_groups.get(key, {})
-        h = load_homography(calibration_dir, video_stem)
-        player_series = build_player_series(players)
-
-        events, hit_counts, landing_counts = analyze_rally_events(
-            video_path,
-            video_stem,
-            rally_id,
-            player_series,
-            shuttle_rally_groups.get(key, []),
-            h,
-            turn_angle_deg,
-            min_event_gap_frames,
-            hit_distance_px,
+        tracked_player_ids = set(players)
+        resolved_mode, event_eligibility, event_reject_reason = resolve_event_eligibility(
+            analysis_mode,
+            tracked_player_ids,
         )
-        event_rows.extend(events)
+        candidate_counts: dict[str, int] = {}
+        if event_eligibility == EVENT_EXPERIMENTAL:
+            h = load_homography(calibration_dir, video_stem)
+            player_series = build_player_series(players)
+            events, candidate_counts, _ = analyze_rally_events(
+                video_path,
+                video_stem,
+                rally_id,
+                player_series,
+                shuttle_rally_groups.get(key, []),
+                h,
+                turn_angle_deg,
+                min_event_gap_frames,
+                hit_distance_px,
+            )
+            events = filter_events_for_tracked_players(events, tracked_player_ids)
+            candidate_counts = {
+                player_id: count
+                for player_id, count in candidate_counts.items()
+                if player_id in tracked_player_ids
+            }
+            event_rows.extend(events)
+        else:
+            not_eligible_rallies += 1
 
         for player_id, rows in players.items():
             metrics = player_metrics(player_id, rows)
@@ -453,9 +527,17 @@ def analyze_tactics(
                     'video_stem': video_stem,
                     'rally_id': rally_id,
                     'player_id': player_id,
+                    'analysis_mode': resolved_mode,
+                    'event_eligibility': event_eligibility,
+                    'event_reject_reason': event_reject_reason,
                     **metrics,
-                    'hit_count': hit_counts.get(player_id, 0),
-                    'landing_count': landing_counts.get(player_id, 0),
+                    'reversal_candidate_count': (
+                        candidate_counts.get(player_id, 0)
+                        if event_eligibility == EVENT_EXPERIMENTAL
+                        else ''
+                    ),
+                    'hit_count': '',
+                    'landing_count': '',
                 }
             )
 
@@ -466,6 +548,8 @@ def analyze_tactics(
     return {
         'summary_rows': len(summary_rows),
         'event_rows': len(event_rows),
+        'not_eligible_rallies': not_eligible_rallies,
+        'analysis_mode': analysis_mode,
         'summary_csv': str(summary_csv),
         'events_csv': str(events_csv),
     }
@@ -473,7 +557,7 @@ def analyze_tactics(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description='Compute tactical metrics (distance/coverage/position) and shuttle hit/landing events.'
+        description='Compute eligible player metrics and optional experimental reversal candidates.'
     )
     parser.add_argument('player_tracks_csv', type=Path, help='Player tracks CSV (smoothed preferred).')
     parser.add_argument('shuttle_tracks_csv', type=Path, help='Shuttle tracks CSV (smoothed preferred).')
@@ -482,6 +566,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--hit-distance-px', type=float, default=80.0)
     parser.add_argument('--turn-angle-deg', type=float, default=100.0)
     parser.add_argument('--min-event-gap-frames', type=int, default=15)
+    parser.add_argument('--analysis-mode', choices=ANALYSIS_MODES, default='auto')
     return parser
 
 
@@ -495,6 +580,7 @@ def main() -> int:
         hit_distance_px=args.hit_distance_px,
         turn_angle_deg=args.turn_angle_deg,
         min_event_gap_frames=args.min_event_gap_frames,
+        analysis_mode=args.analysis_mode,
     )
     print(f"Wrote {result['summary_rows']} summary rows -> {result['summary_csv']}")
     print(f"Wrote {result['event_rows']} event rows -> {result['events_csv']}")

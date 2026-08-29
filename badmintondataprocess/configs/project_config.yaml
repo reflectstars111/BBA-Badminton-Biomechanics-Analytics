@@ -1,41 +1,21 @@
-project_name: badminton_data_process
-version: 0.1.0
-
+# Minimal supported override example. Values not consumed by the research
+# pipeline are intentionally absent and rejected by the strict schema.
 data:
-  raw_videos_dir: raw_videos
-  rallies_dir: rallies
-  metadata_dir: metadata
-  annotations_dir: annotations
-  outputs_dir: outputs
-
-video:
-  default_fps: 30
-  preferred_resolution: 1080p
-  allowed_extensions:
-    - .mp4
-    - .mkv
+  runs_dir: runs
 
 rally_segmentation:
   min_rally_seconds: 3.0
   max_gap_seconds: 8.0
-  enable_manual_review: true
-
-court_calibration:
-  court_type: singles
-  save_homography: true
+  pre_context_seconds: 2.2
+  post_context_seconds: 1.4
+  min_active_samples: 2
 
 player_tracking:
   detector: yolo
-  tracker: bytetrack
-  pose_model: rtmpose
-  use_ankle_midpoint: true
+  roles:
+    - near
+    - far
 
 shuttle_tracking:
-  model: tracknetv4
-  smoothing: kalman_spline
-  confidence_threshold: 0.2
-
-outputs:
-  save_debug_video: true
-  save_csv: true
-  save_heatmap: true
+  model: tracknet
+  tracknet_weights: weights/TrackNet_best.pt

@@ -1,0 +1,34 @@
+# Fast pose-only validation profile for the frozen All England rally sample.
+main_view:
+  threshold: 0.50
+  min_segment_seconds: 1.0
+
+court_calibration:
+  reference_points:
+    - 0.3134
+    - 0.5333
+    - 0.6866
+    - 0.5333
+    - 0.7887
+    - 0.9396
+    - 0.2089
+    - 0.9417
+
+player_tracking:
+  detector: rtmpose
+  roles: [near, far]
+  pose_keypoint_confidence: 0.35
+  pose_min_keypoints: 5
+  rtmpose_mode: balanced
+  rtmpose_backend: onnxruntime
+  rtmpose_device: cuda
+
+# Pose and shuttle backends are independent. Keep the previously validated
+# TrackNet shuttle model when enabling RTMPose player skeletons.
+shuttle_tracking:
+  model: tracknet
+  tracknet_weights: weights/TrackNet_best.pt
+  tracknet_device: cuda
+
+demo_rendering:
+  max_rallies: 1

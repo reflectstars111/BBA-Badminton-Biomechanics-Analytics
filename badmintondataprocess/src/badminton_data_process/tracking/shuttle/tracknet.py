@@ -131,7 +131,18 @@ class TrackNetDetector:
             raise RuntimeError("torch/opencv/numpy required for TrackNetDetector")
         self.weights_path = Path(weights_path)
         self.vis_threshold = vis_threshold
-        self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+        requested_device = device or "auto"
+        if requested_device == "cuda" and not torch.cuda.is_available():
+            raise RuntimeError(
+                "TrackNet CUDA was requested, but torch.cuda.is_available() is false. "
+                "Install a CUDA-enabled PyTorch build or select device='cpu'."
+            )
+        selected_device = (
+            "cuda" if requested_device == "auto" and torch.cuda.is_available()
+            else "cpu" if requested_device == "auto"
+            else requested_device
+        )
+        self.device = torch.device(selected_device)
         self._model: TrackNet | None = None
         self._seq_len = 3
         self._bg_mode = ""

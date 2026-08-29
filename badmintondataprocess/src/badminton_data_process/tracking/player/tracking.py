@@ -8,7 +8,17 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from badminton_data_process.calibration.reference import COURT_LENGTH_M, COURT_WIDTH_M, NET_Y_M
 from badminton_data_process.core.io import ensure_dir, read_csv_rows, write_csv_rows
+from badminton_data_process.tracking.player.anchors import PlayerAnchors, anchors_from_observation
+from badminton_data_process.tracking.player.pose import (
+    PoseObservation,
+    PoseRuntimeConfig,
+    detect_rtmpose_candidates,
+    detect_yolo_pose_candidates,
+    release_pose_model_cache,
+    skeleton_segments,
+)
 
 try:
     import cv2
@@ -46,6 +56,7 @@ __all__ = [
     'predict_track_bbox',
     'pick_player_boxes',
     'project_point',
+    'court_to_image_point',
     'draw_debug_frame',
     'detect_players',
     'process_video',
@@ -65,6 +76,22 @@ TRACK_FIELDNAMES = [
     'bbox_y1',
     'bbox_x2',
     'bbox_y2',
+    'body_image_x',
+    'body_image_y',
+    'body_anchor_source',
+    'body_anchor_confidence',
+    'body_anchor_valid',
+    'ground_image_x',
+    'ground_image_y',
+    'ground_anchor_source',
+    'ground_anchor_confidence',
+    'ground_anchor_valid',
+    'pose_model',
+    'pose_keypoints_json',
+    'pose_confidence',
+    'pose_valid',
+    'pose_valid_keypoint_count',
+    'pose_keypoint_threshold',
     'image_x',
     'image_y',
     'court_x',
@@ -81,6 +108,7 @@ SUMMARY_FIELDNAMES = [
     'track_rows',
     'debug_video',
     'detector',
+    'pose_rows',
     'message',
 ]
 
@@ -373,10 +401,14 @@ def pick_player_boxes(
     near_max_missing_frames: int,
     far_max_missing_frames: int,
     role_half_tolerance: float,
+    homography: np.ndarray | None = None,
+    player_ids: tuple[str, ...] = ('near', 'far'),
 ) -> dict[str, tuple[tuple[int, int, int, int] | None, float, bool]]:
+    if not player_ids or any(player_id not in {'near', 'far'} for player_id in player_ids):
+        raise ValueError("player_ids must contain 'near', 'far', or both")
     selected: dict[str, tuple[tuple[int, int, int, int] | None, float, bool]] = {}
     used_candidate_indices: set[int] = set()
-    for player_id in ['near', 'far']:
+    for player_id in player_ids:
         predicted_bbox = predict_track_bbox(track_states[player_id], frame_shape)
         if predicted_bbox is not None:
             predicted_bbox = clamp_bbox_to_frame(
@@ -392,14 +424,17 @@ def pick_player_boxes(
             if candidate_index in used_candidate_indices:
                 continue
             candidate_bottom = candidate['bottom_center']
-            if player_id == 'far' and candidate_bottom[1] > near_threshold_y + role_half_tolerance:
-                continue
-            if player_id == 'near' and candidate_bottom[1] < near_threshold_y - role_half_tolerance:
-                continue
-            if player_id == 'far' and candidate_bottom[1] > near_threshold_y:
-                continue
-            if player_id == 'near' and candidate_bottom[1] < near_threshold_y:
-                continue
+            if homography is not None:
+                _, candidate_court_y = project_point(homography, candidate_bottom)
+                if player_id == 'far' and candidate_court_y > NET_Y_M:
+                    continue
+                if player_id == 'near' and candidate_court_y < NET_Y_M:
+                    continue
+            else:
+                if player_id == 'far' and candidate_bottom[1] > near_threshold_y:
+                    continue
+                if player_id == 'near' and candidate_bottom[1] < near_threshold_y:
+                    continue
             if predicted_bottom is not None:
                 distance = point_distance(candidate_bottom, predicted_bottom)
                 if distance > max_track_distance:
@@ -441,6 +476,21 @@ def pick_player_boxes(
                 predicted_bbox,
                 frame_shape=frame_shape,
             )
+            if homography is not None:
+                _, predicted_court_y = project_point(
+                    homography,
+                    bbox_bottom_center(predicted_bbox),
+                )
+                wrong_half = (
+                    player_id == 'far' and predicted_court_y > NET_Y_M
+                ) or (
+                    player_id == 'near' and predicted_court_y < NET_Y_M
+                )
+                if wrong_half:
+                    track_states[player_id]['bbox'] = None
+                    track_states[player_id]['velocity'] = (0.0, 0.0)
+                    selected[player_id] = (None, 0.0, True)
+                    continue
             track_states[player_id]['bbox'] = predicted_bbox
             dx, dy = track_states[player_id].get('velocity', (0.0, 0.0))
             track_states[player_id]['velocity'] = (dx * 0.82, dy * 0.82)
@@ -449,6 +499,23 @@ def pick_player_boxes(
             track_states[player_id]['bbox'] = None
             track_states[player_id]['velocity'] = (0.0, 0.0)
             selected[player_id] = (None, 0.0, True)
+
+    if 'near' in selected and 'far' in selected:
+        near_bbox, _, near_interpolated = selected['near']
+        far_bbox, _, far_interpolated = selected['far']
+        if (
+            near_bbox is not None
+            and far_bbox is not None
+            and near_interpolated != far_interpolated
+            and iou(near_bbox, far_bbox) > 0.30
+        ):
+            # A missed-player prediction must not coexist with a real detection
+            # occupying the same body. Keep the observed role and terminate the
+            # drifting prediction; two genuine detections are left untouched.
+            predicted_player = 'near' if near_interpolated else 'far'
+            selected[predicted_player] = (None, 0.0, True)
+            track_states[predicted_player]['bbox'] = None
+            track_states[predicted_player]['velocity'] = (0.0, 0.0)
     return selected
 
 
@@ -456,6 +523,14 @@ def project_point(homography: np.ndarray, point: tuple[float, float]) -> tuple[f
     src = np.array([[[point[0], point[1]]]], dtype=np.float32)
     projected = cv2.perspectiveTransform(src, homography)[0, 0]
     return float(projected[0]), float(projected[1])
+
+
+def court_to_image_point(
+    homography: np.ndarray,
+    point: tuple[float, float],
+) -> tuple[float, float]:
+    inverse = np.linalg.inv(homography)
+    return project_point(inverse, point)
 
 
 def clamp_to_court_quad(
@@ -488,6 +563,9 @@ def draw_debug_frame(
     corners: np.ndarray,
     player_boxes: dict[str, tuple[tuple[int, int, int, int] | None, float, bool]],
     detector: str,
+    player_poses: dict[str, PoseObservation | None] | None = None,
+    player_anchors: dict[str, PlayerAnchors] | None = None,
+    pose_keypoint_threshold: float = 0.35,
 ) -> np.ndarray:
     debug = frame.copy()
     cv2.polylines(debug, [corners.astype(np.int32)], True, (0, 255, 255), 2)
@@ -508,6 +586,39 @@ def draw_debug_frame(
         x1, y1, x2, y2 = bbox
         color = colors[player_id]
         cv2.rectangle(debug, (x1, y1), (x2, y2), color, 2)
+        pose = (player_poses or {}).get(player_id)
+        if pose is not None:
+            for start, end in skeleton_segments(pose.keypoints, pose_keypoint_threshold):
+                cv2.line(
+                    debug,
+                    (round(start.x), round(start.y)),
+                    (round(end.x), round(end.y)),
+                    color,
+                    2,
+                    cv2.LINE_AA,
+                )
+            for point in pose.valid_keypoints(pose_keypoint_threshold):
+                cv2.circle(debug, (round(point.x), round(point.y)), 3, (255, 255, 255), -1)
+        anchors = (player_anchors or {}).get(player_id)
+        if anchors is None:
+            anchors = anchors_from_observation(bbox, confidence, interpolated=interpolated)
+        if anchors is None:
+            continue
+        cv2.circle(
+            debug,
+            (round(anchors.body_center.x), round(anchors.body_center.y)),
+            5,
+            color,
+            -1,
+        )
+        cv2.drawMarker(
+            debug,
+            (round(anchors.ground_contact.x), round(anchors.ground_contact.y)),
+            color,
+            cv2.MARKER_TILTED_CROSS,
+            10,
+            2,
+        )
         label = f'{player_id} {confidence:.2f}'
         if interpolated:
             label += ' interp'
@@ -532,6 +643,7 @@ def detect_players(
     yolo_model_name: str,
     yolo_confidence: float,
     yolo_image_size: int,
+    pose_config: PoseRuntimeConfig,
 ) -> list[dict[str, object]]:
     if detector == 'yolo':
         return detect_players_yolo(
@@ -540,6 +652,28 @@ def detect_players(
             model_name=yolo_model_name,
             confidence_threshold=yolo_confidence,
             image_size=yolo_image_size,
+        )
+    if detector == 'yolo_pose':
+        return detect_yolo_pose_candidates(
+            frame,
+            court_mask,
+            model_name=pose_config.model_name,
+            confidence_threshold=yolo_confidence,
+            image_size=yolo_image_size,
+        )
+    if detector == 'rtmpose':
+        return detect_rtmpose_candidates(
+            frame,
+            court_mask,
+            mode=pose_config.rtmpose_mode,
+            backend=pose_config.rtmpose_backend,
+            device=pose_config.rtmpose_device,
+            detector_model=pose_config.rtmpose_detector_model,
+            pose_model=pose_config.rtmpose_pose_model,
+            detector_input_size=pose_config.rtmpose_detector_input_size,
+            pose_input_size=pose_config.rtmpose_pose_input_size,
+            keypoint_threshold=pose_config.keypoint_threshold,
+            min_valid_keypoints=pose_config.min_valid_keypoints,
         )
     if fg_mask is None:
         raise RuntimeError('heuristic detector requires foreground mask')
@@ -559,8 +693,11 @@ def process_video(
     near_max_missing_frames: int,
     far_max_missing_frames: int,
     role_half_tolerance: float,
+    player_roles: tuple[str, ...] = ('near', 'far'),
+    pose_config: PoseRuntimeConfig | None = None,
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
     require_opencv()
+    pose_config = pose_config or PoseRuntimeConfig()
     calibration_path = calibration_dir / f'{video_path.stem}.json'
     if not calibration_path.exists():
         return [], {
@@ -590,7 +727,15 @@ def process_video(
     width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
     height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
     court_mask = build_court_mask((height, width, 3), corners)
-    near_threshold_y = float((corners[0, 1] + corners[1, 1] + corners[2, 1] + corners[3, 1]) / 4.0)
+    try:
+        _, near_threshold_y = court_to_image_point(
+            homography,
+            (COURT_WIDTH_M / 2.0, NET_Y_M),
+        )
+    except np.linalg.LinAlgError:
+        near_threshold_y = float(
+            (corners[0, 1] + corners[1, 1] + corners[2, 1] + corners[3, 1]) / 4.0
+        )
     background_subtractor = None
     if detector == 'heuristic':
         background_subtractor = cv2.createBackgroundSubtractorMOG2(
@@ -632,6 +777,7 @@ def process_video(
                 yolo_model_name=yolo_model_name,
                 yolo_confidence=yolo_confidence,
                 yolo_image_size=yolo_image_size,
+                pose_config=pose_config,
             )
             player_boxes = pick_player_boxes(
                 candidates=candidates,
@@ -643,22 +789,49 @@ def process_video(
                 near_max_missing_frames=near_max_missing_frames,
                 far_max_missing_frames=far_max_missing_frames,
                 role_half_tolerance=role_half_tolerance,
+                homography=homography,
+                player_ids=player_roles,
             )
 
+            player_poses: dict[str, PoseObservation | None] = {}
+            player_anchors: dict[str, PlayerAnchors] = {}
             for player_id, (bbox, confidence, interpolated) in player_boxes.items():
                 if bbox is None:
                     continue
                 x1, y1, x2, y2 = bbox
-                image_x = (x1 + x2) / 2.0
-                image_y = float(y2)
+                pose = None
+                if not interpolated:
+                    pose = next(
+                        (
+                            candidate.get('pose')
+                            for candidate in candidates
+                            if candidate.get('bbox') == bbox
+                        ),
+                        None,
+                    )
+                if pose is not None and not isinstance(pose, PoseObservation):
+                    pose = None
+                anchors = anchors_from_observation(
+                    bbox,
+                    confidence,
+                    keypoints=pose.anchor_keypoints() if pose is not None else None,
+                    keypoint_threshold=pose_config.keypoint_threshold,
+                    interpolated=interpolated,
+                )
+                if anchors is None:
+                    continue
+                player_poses[player_id] = pose
+                player_anchors[player_id] = anchors
+                ground_x = anchors.ground_contact.x
+                ground_y = anchors.ground_contact.y
                 if interpolated:
                     # A predicted (missed-player) box can drift above the far
                     # baseline or past the sidelines; projecting the off-court
                     # feet through the homography extrapolates to absurd court
                     # coords (e.g. court_y=-96). Clamp the projection point to
                     # the court quad so the feet stay on court.
-                    image_x, image_y = clamp_to_court_quad((image_x, image_y), corners)
-                court_x, court_y = project_point(homography, (image_x, image_y))
+                    ground_x, ground_y = clamp_to_court_quad((ground_x, ground_y), corners)
+                court_x, court_y = project_point(homography, (ground_x, ground_y))
                 rows.append(
                     {
                         'video_path': str(video_path),
@@ -671,8 +844,38 @@ def process_video(
                         'bbox_y1': y1,
                         'bbox_x2': x2,
                         'bbox_y2': y2,
-                        'image_x': round(image_x, 2),
-                        'image_y': round(image_y, 2),
+                        'body_image_x': round(anchors.body_center.x, 2),
+                        'body_image_y': round(anchors.body_center.y, 2),
+                        'body_anchor_source': anchors.body_center.source.value,
+                        'body_anchor_confidence': round(anchors.body_center.confidence, 3),
+                        'body_anchor_valid': int(anchors.body_center.valid),
+                        'ground_image_x': round(ground_x, 2),
+                        'ground_image_y': round(ground_y, 2),
+                        'ground_anchor_source': anchors.ground_contact.source.value,
+                        'ground_anchor_confidence': round(anchors.ground_contact.confidence, 3),
+                        'ground_anchor_valid': int(anchors.ground_contact.valid),
+                        'pose_model': pose.model_name if pose is not None else '',
+                        'pose_keypoints_json': pose.to_json() if pose is not None else '',
+                        'pose_confidence': (
+                            round(pose.mean_confidence(pose_config.keypoint_threshold), 3)
+                            if pose is not None
+                            else ''
+                        ),
+                        'pose_valid': int(
+                            pose is not None
+                            and len(pose.valid_keypoints(pose_config.keypoint_threshold))
+                            >= pose_config.min_valid_keypoints
+                        ),
+                        'pose_valid_keypoint_count': (
+                            len(pose.valid_keypoints(pose_config.keypoint_threshold))
+                            if pose is not None
+                            else 0
+                        ),
+                        'pose_keypoint_threshold': pose_config.keypoint_threshold,
+                        # Compatibility Adapter: legacy image_x/y retain their
+                        # historical ground-contact meaning.
+                        'image_x': round(ground_x, 2),
+                        'image_y': round(ground_y, 2),
                         'court_x': round(court_x, 3),
                         'court_y': round(court_y, 3),
                         'confidence': round(confidence, 3),
@@ -681,7 +884,15 @@ def process_video(
                     }
                 )
 
-            debug_frame = draw_debug_frame(frame, corners, player_boxes, detector)
+            debug_frame = draw_debug_frame(
+                frame,
+                corners,
+                player_boxes,
+                detector,
+                player_poses=player_poses,
+                player_anchors=player_anchors,
+                pose_keypoint_threshold=pose_config.keypoint_threshold,
+            )
             writer.write(debug_frame)
             frame_id += 1
     except Exception as exc:  # pragma: no cover - runtime dependent
@@ -706,6 +917,7 @@ def process_video(
         'track_rows': len(rows),
         'debug_video': str(debug_video_path),
         'detector': detector,
+        'pose_rows': sum(int(row.get('pose_valid', 0)) for row in rows),
         'message': 'ok',
     }
 
@@ -725,7 +937,11 @@ def track_players(
     near_max_missing_frames: int,
     far_max_missing_frames: int,
     role_half_tolerance: float,
+    player_roles: tuple[str, ...] = ('near', 'far'),
+    pose_config: PoseRuntimeConfig | None = None,
 ) -> int:
+    if not player_roles or any(role not in {'near', 'far'} for role in player_roles):
+        raise ValueError("player_roles must contain 'near', 'far', or both")
     videos = iter_video_paths(input_path)
     all_rows: list[dict[str, object]] = []
     summaries: list[dict[str, object]] = []
@@ -743,6 +959,8 @@ def track_players(
             near_max_missing_frames=near_max_missing_frames,
             far_max_missing_frames=far_max_missing_frames,
             role_half_tolerance=role_half_tolerance,
+            player_roles=player_roles,
+            pose_config=pose_config,
         )
         all_rows.extend(rows)
         summaries.append(summary)
@@ -755,6 +973,8 @@ def track_players(
     print(f'Successful tracking runs: {success_count}')
     print(f'Player tracks CSV: {output_csv}')
     print(f'Summary CSV: {summary_csv}')
+    if detector in {'yolo_pose', 'rtmpose'}:
+        release_pose_model_cache()
     return 0 if success_count == len(summaries) else 2
 
 
@@ -791,9 +1011,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         '--detector',
-        choices=['heuristic', 'yolo'],
-        default='heuristic',
+        choices=['heuristic', 'yolo', 'yolo_pose', 'rtmpose'],
+        default='yolo',
         help='Player detector backend.',
+    )
+    parser.add_argument(
+        '--roles',
+        nargs='+',
+        choices=['near', 'far'],
+        default=['near', 'far'],
+        help='Court-side player roles to track; defaults to near and far.',
     )
     parser.add_argument(
         '--yolo-model',
@@ -804,15 +1031,27 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         '--yolo-confidence',
         type=float,
-        default=0.12,
+        default=0.25,
         help='Confidence threshold used by YOLO person detection.',
     )
     parser.add_argument(
         '--yolo-image-size',
         type=int,
-        default=1280,
+        default=640,
         help='Inference image size used by YOLO.',
     )
+    parser.add_argument('--pose-model', default='yolo11n-pose.pt')
+    parser.add_argument('--pose-keypoint-confidence', type=float, default=0.35)
+    parser.add_argument('--pose-min-keypoints', type=int, default=5)
+    parser.add_argument(
+        '--rtmpose-mode', choices=['lightweight', 'balanced', 'performance'], default='balanced'
+    )
+    parser.add_argument('--rtmpose-backend', choices=['onnxruntime', 'opencv'], default='onnxruntime')
+    parser.add_argument('--rtmpose-device', default='auto')
+    parser.add_argument('--rtmpose-detector-model', default='')
+    parser.add_argument('--rtmpose-pose-model', default='')
+    parser.add_argument('--rtmpose-detector-input-size', type=int, nargs=2, default=[416, 416])
+    parser.add_argument('--rtmpose-pose-input-size', type=int, nargs=2, default=[192, 256])
     parser.add_argument(
         '--near-max-track-distance',
         type=float,
@@ -863,6 +1102,19 @@ def main(argv: list[str] | None = None) -> int:
         near_max_missing_frames=args.near_max_missing_frames,
         far_max_missing_frames=args.far_max_missing_frames,
         role_half_tolerance=args.role_half_tolerance,
+        player_roles=tuple(dict.fromkeys(args.roles)),
+        pose_config=PoseRuntimeConfig(
+            model_name=args.pose_model,
+            keypoint_threshold=args.pose_keypoint_confidence,
+            min_valid_keypoints=args.pose_min_keypoints,
+            rtmpose_mode=args.rtmpose_mode,
+            rtmpose_backend=args.rtmpose_backend,
+            rtmpose_device=args.rtmpose_device,
+            rtmpose_detector_model=args.rtmpose_detector_model,
+            rtmpose_pose_model=args.rtmpose_pose_model,
+            rtmpose_detector_input_size=tuple(args.rtmpose_detector_input_size),
+            rtmpose_pose_input_size=tuple(args.rtmpose_pose_input_size),
+        ),
     )
 
 

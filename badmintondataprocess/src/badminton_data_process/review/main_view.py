@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from badminton_data_process.calibration.reference import COURT_WIDTH_M
 from badminton_data_process.core.io import ensure_dir, read_csv_rows, write_csv_rows
 from badminton_data_process.core.schemas import MAIN_VIEW_QUALITY_FIELDS, REJECTED_SEGMENT_FIELDS
 
@@ -38,7 +39,7 @@ def projection_quality(rows: list[dict[str, str]]) -> dict[str, float]:
             outliers += 1
         if y < -5.0 or y > 20.0:
             absurd_y += 1
-        if abs(x) <= 0.03 or abs(x - 6.10) <= 0.03:
+        if abs(x) <= 0.03 or abs(x - COURT_WIDTH_M) <= 0.03:
             boundary_stuck += 1
     if total == 0:
         return {
@@ -143,4 +144,3 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     return review_main_view_run(args.run, args.output_dir, args.min_quality_score)
-

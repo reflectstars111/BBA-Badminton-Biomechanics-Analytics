@@ -4,6 +4,9 @@ import argparse
 import os
 from pathlib import Path
 
+from badminton_data_process.core.config import load_config
+from badminton_data_process.core.config_schema import parse_config
+from badminton_data_process.core.paths import ProjectPaths, RunLayout
 from badminton_data_process.pipeline.run import run_pipeline
 from common import read_csv_rows, write_csv_rows
 
@@ -22,6 +25,7 @@ def batch_run_matches(
     stop_after: str | None = None,
     config_path: Path | None = None,
     skip_visualize: bool = False,
+    skip_demo: bool = False,
     force: bool = False,
     max_matches: int | None = None,
 ) -> list[dict[str, str]]:
@@ -51,7 +55,9 @@ def batch_run_matches(
                 root=root,
                 stop_after=stop_after,
                 skip_visualize=skip_visualize,
+                skip_demo=skip_demo,
                 force=force,
+                runs_dir=runs_dir,
             )
             results.append(
                 {
@@ -67,7 +73,7 @@ def batch_run_matches(
                 {
                     'match_id': match_id,
                     'video': str(video),
-                    'run_dir': str(runs_dir / run_id),
+                    'run_dir': str(RunLayout.create(root, run_id, runs_dir).run_dir),
                     'status': 'failed',
                     'message': str(exc)[:200],
                 }
@@ -88,11 +94,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--config', type=Path, default=None)
     parser.add_argument(
         '--stop-after',
-        choices=['rally', 'calibrate', 'tracking'],
+        choices=['main_view', 'rally', 'calibrate', 'tracking'],
         default=None,
         help='Stop after this stage; omit to run the full pipeline.',
     )
     parser.add_argument('--skip-visualize', action='store_true')
+    parser.add_argument('--skip-demo', action='store_true')
     parser.add_argument('--force', action='store_true', help='Ignore existing manifests and re-run all stages.')
     parser.add_argument('--max-matches', type=int, default=None)
     parser.add_argument('--summary-csv', type=Path, default=None)
@@ -102,14 +109,22 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     root = PROJECT_ROOT
-    matches_csv = args.matches_csv or root / 'metadata' / 'matches.csv'
-    runs_dir = args.runs_dir or root / 'runs'
+    config = load_config(args.config, root=root)
+    cfg = parse_config(config)
+    project_paths = ProjectPaths.from_config(config, root=root)
+    matches_csv = args.matches_csv or project_paths.metadata / 'matches.csv'
+    runs_dir = RunLayout.create(
+        root,
+        '_batch_layout',
+        args.runs_dir if args.runs_dir is not None else cfg.data.runs_dir,
+    ).runs_dir
     results = batch_run_matches(
         matches_csv=matches_csv,
         runs_dir=runs_dir,
         stop_after=args.stop_after,
         config_path=args.config,
         skip_visualize=args.skip_visualize,
+        skip_demo=args.skip_demo,
         force=args.force,
         max_matches=args.max_matches,
     )

@@ -1,0 +1,33 @@
+# Real-video diagnostic profile for the 2019 All England broadcast.
+# This lowers only the Main View aggregate threshold based on measured scores;
+# player tracking stays at its default; shuttle tracking uses the available
+# TrackNet weights because the motion/brightness baseline failed real-video QA.
+main_view:
+  threshold: 0.50
+  min_segment_seconds: 1.0
+
+court_calibration:
+  reference_points:
+    - 0.3134
+    - 0.5333
+    - 0.6866
+    - 0.5333
+    - 0.7887
+    - 0.9396
+    - 0.2089
+    - 0.9417
+
+shuttle_tracking:
+  model: tracknet
+  tracknet_weights: weights/TrackNet_best.pt
+
+player_tracking:
+  detector: rtmpose
+  rtmpose_mode: balanced
+  rtmpose_backend: onnxruntime
+  rtmpose_device: auto
+  pose_keypoint_confidence: 0.35
+  pose_min_keypoints: 5
+
+demo_rendering:
+  max_rallies: 1

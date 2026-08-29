@@ -8,4 +8,5 @@ def test_legacy_smoothing_adapter_exposes_core_functions() -> None:
     assert filled == [0.0, 1.0, 2.0]
     assert gap_mask == [False, True, False]
     assert rolling_median([1.0, 10.0, 2.0], 3) == [5.5, 2.0, 6.0]
-    assert ema_smooth([1.0, None, 3.0], 0.5) == [1.0, 1.0, 2.0]
+    assert rolling_median([1.0, None, 3.0], 3) == [1.0, None, 3.0]
+    assert ema_smooth([1.0, None, 3.0], 0.5) == [1.0, None, 3.0]

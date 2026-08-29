@@ -65,6 +65,34 @@ def frame_metrics(frame: np.ndarray) -> dict[str, float]:
     }
 
 
+def frame_motion_scores(
+    current_gray: np.ndarray,
+    previous_gray: np.ndarray,
+) -> tuple[float, float]:
+    """Return full-frame and play-area motion scores.
+
+    Players and the shuttle occupy too few pixels in a wide broadcast frame
+    for the full-frame mean to be a reliable hard gate. The normalized play
+    area excludes most spectators, scoreboards and side carpets while keeping
+    both halves of the court across the supported main-view compositions.
+    """
+    if current_gray.shape != previous_gray.shape:
+        raise ValueError('motion frames must have identical shapes')
+    frame_diff = cv2.absdiff(current_gray, previous_gray)
+    height, width = frame_diff.shape[:2]
+    x0 = int(round(width * 0.0875))
+    x1 = int(round(width * 0.9125))
+    y0 = int(round(height * 0.1556))
+    y1 = int(round(height * 0.9889))
+    play_area = frame_diff[y0:y1, x0:x1]
+    if play_area.size == 0:
+        play_area = frame_diff
+    return (
+        float(np.mean(frame_diff)) / 255.0,
+        float(np.mean(play_area)) / 255.0,
+    )
+
+
 def analyze_video(
     input_path: Path,
     sample_every: int,
@@ -105,10 +133,18 @@ def analyze_video(
         resized = cv2.resize(frame, (320, 180))
         gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
         if previous_gray is None:
-            motion_score = 0.0
+            global_motion_score = 0.0
+            play_area_motion_score = 0.0
         else:
-            frame_diff = cv2.absdiff(gray, previous_gray)
-            motion_score = float(np.mean(frame_diff)) / 255.0
+            global_motion_score, play_area_motion_score = frame_motion_scores(
+                gray,
+                previous_gray,
+            )
+
+        # Keep ``motion_score`` as the activity score consumed by the public
+        # segmentation contract. The two component scores remain in the audit
+        # CSV so threshold decisions can be reproduced.
+        motion_score = play_area_motion_score
 
         metrics = frame_metrics(frame)
         # Rally boundaries follow the stable full-court broadcast view. Edge
@@ -138,6 +174,8 @@ def analyze_video(
                 'sample_frame': float(frame_index),
                 'timestamp': frame_index / fps,
                 'motion_score': motion_score,
+                'global_motion_score': global_motion_score,
+                'play_area_motion_score': play_area_motion_score,
                 'line_ratio': metrics['line_ratio'],
                 'green_ratio': metrics['green_ratio'],
                 'center_green_ratio': metrics['center_green_ratio'],
@@ -334,6 +372,8 @@ def write_analysis_csv(metadata_csv: Path, analysis_rows: list[dict[str, float]]
         'sample_frame',
         'timestamp',
         'motion_score',
+        'global_motion_score',
+        'play_area_motion_score',
         'line_ratio',
         'green_ratio',
         'center_green_ratio',
@@ -388,17 +428,30 @@ def write_rally_clips(
         rally_id = f'{rally_index:03d}'
         output_path = output_dir / f'{match_id}_rally_{rally_id}.mp4'
         writer = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
+        if not writer.isOpened():
+            capture.release()
+            raise RuntimeError(f'Cannot create rally video: {output_path}')
 
         capture.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
         current_frame = start_frame
-        while current_frame <= end_frame:
+        written_frames = 0
+        while current_frame < end_frame:
             ok, frame = capture.read()
             if not ok:
                 break
             writer.write(frame)
             current_frame += 1
+            written_frames += 1
 
         writer.release()
+        expected_frames = end_frame - start_frame
+        if written_frames != expected_frames:
+            output_path.unlink(missing_ok=True)
+            capture.release()
+            raise RuntimeError(
+                f'Rally interval [{start_frame}, {end_frame}) expected '
+                f'{expected_frames} frames but decoded {written_frames}'
+            )
         rally_rows.append(
             {
                 'match_id': match_id,

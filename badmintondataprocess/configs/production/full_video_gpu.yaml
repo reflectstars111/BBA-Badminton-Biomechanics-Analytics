@@ -1,0 +1,59 @@
+# General end-to-end profile for uncleaned broadcast videos with interviews,
+# replays, close-ups, scoreboards, and camera cuts. Main View and Usable Rally
+# gates remove unsuitable frames before calibration and tracking.
+main_view:
+  sample_every: 15
+  threshold: 0.55
+  min_segment_seconds: 1.5
+  max_gap_seconds: 0.75
+
+rally_segmentation:
+  sample_every: 10
+  min_rally_seconds: 2.0
+  max_rally_seconds: 90.0
+  max_gap_seconds: 2.0
+  pre_context_seconds: 2.2
+  post_context_seconds: 1.4
+  min_active_samples: 2
+  # Wide-view players occupy too little of the complete broadcast frame for
+  # the historical 0.01 global mean-difference gate. This threshold applies
+  # to the normalized court/play-area motion score.
+  min_motion_score: 0.008
+
+court_calibration:
+  reference_points: null
+  detector: hybrid
+  min_line_support: 0.45
+  min_area_ratio: 0.08
+  stability_corner_rmse_ratio: 0.05
+  min_stable_candidates: 2
+
+player_tracking:
+  detector: rtmpose
+  roles: [near, far]
+  pose_keypoint_confidence: 0.35
+  pose_min_keypoints: 5
+  rtmpose_mode: balanced
+  rtmpose_backend: onnxruntime
+  rtmpose_device: cuda
+
+shuttle_tracking:
+  model: tracknet
+  tracknet_weights: weights/TrackNet_best.pt
+  tracknet_device: cuda
+  tracknet_vis_threshold: 0.15
+  # Do not extrapolate when the shuttle leaves the frame; resume from a new
+  # observed point instead of drawing a synthetic jump back into view.
+  max_missing_frames: 0
+
+smoothing:
+  # Short gaps are filled only when their observed endpoints stay nearby.
+  shuttle_max_interpolation_displacement_px: 80.0
+
+demo_rendering:
+  enabled: true
+  output_filename: badminton_full_analysis.mp4
+  max_rallies: null
+  show_topdown: true
+  show_stats: true
+  browser_compatible: true

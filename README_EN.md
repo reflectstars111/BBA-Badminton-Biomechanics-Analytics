@@ -2,7 +2,7 @@
 
 > **A secondary development based on [yo-WASSUP/Good-Badminton](https://github.com/yo-WASSUP/Good-Badminton).**
 >
-> The upstream project is a "frame-by-frame detection + trajectory visualization" demo tool.
+> The upstream project is a "frame-by-frame detection + trajectory visualization" badminton match video-analysis tool.
 > On top of its computer-vision capabilities, this project rebuilds it into a
 > **reproducible, quality-gated** data-processing pipeline for publication-grade visual analysis.
 
@@ -20,17 +20,27 @@ This project is forked from [yo-WASSUP/Good-Badminton](https://github.com/yo-WAS
 
 ## Our Advantages (vs Upstream)
 
+> The comparison below follows the upstream's current [README](https://github.com/yo-WASSUP/Good-Badminton) and its development plan.
+
 | Dimension | Upstream yo-WASSUP | This Project |
 | --- | --- | --- |
-| **Input** | Clean clips + manual court annotation | Uncleaned full broadcast, auto-cleaned |
-| **Rally segmentation** | None (continuous court view) | Main View gate + Usable Rally segmentation, automatically dropping interviews/replays/close-ups/scoreboards/camera cuts |
-| **Court calibration** | Takes the highest-scoring candidate; misled by green floor / ad-board edges | Hough white-line detection + 13-line support + geometric / reprojection / convexity / temporal-stability multi-frame validation, **explicitly rejecting rather than guessing** when evidence is insufficient |
-| **Shuttlecock detection** | Single-frame YOLO, sparse tracks | TrackNet multi-frame deep detection, ~93% dense visible tracks |
-| **Player localization** | Single-point projection; aerial points introduce systematic bias | RTMPose pose + **dual anchors** (body center / ground contact separated); official metric coordinates come only from ground contact |
-| **Failure semantics** | "finished = success" | Five distinct states — missing / rejected / failed / empty / success — **missing is never faked as valid, failure is never faked as success** |
-| **Reproducibility** | Ad-hoc output paths, no fingerprinting | Run Manifest records config/input/model fingerprints + per-stage inputs/outputs/durations, with breakpoint resume |
-| **Tactical analysis** | None | Hit/landing (physical rule: the shuttle touches the floor exactly once per rally), distance, coverage, court-area occupancy, each metric gated by eligibility |
-| **Engineering** | — | 122 tests; CUDA acceleration (RTMPose player stage ~603s CPU → ~41s CUDA); H.264 browser-compatible export |
+| **Input / annotation** | Requires a court template image or manual four-corner annotation (auto-detects white/yellow court lines) | Uncleaned full broadcast, auto-cleaned + automatic Validated Calibration |
+| **Rally detection** | Template-matching "continuous court view", unable to tell replays/close-ups from play | Main View gate + Usable Rally segmentation, automatically dropping interviews/replays/close-ups/scoreboards/camera cuts |
+| **Calibration validation** | Auto-matches white/yellow court lines + WebUI manual four-corner correction; candidates are not independently validated | Hough white-line + 13-line support + geometric / reprojection / convexity / temporal-stability multi-frame validation, **explicitly rejecting rather than guessing** when evidence is insufficient |
+| **Shuttlecock detection** | Single-frame YOLO detection | TrackNet multi-frame deep detection, ~93% dense visible tracks |
+| **Player localization** | Detection box / keypoints projected directly onto the court | RTMPose pose + **dual anchors** (body center / ground contact separated); official metric coordinates come only from ground contact |
+| **Movement statistics** | Distance, speed, rally count (hit-point analysis is experimental) | Hit/landing (physical rule: the shuttle touches the floor exactly once per rally), distance, coverage, court-area occupancy, each metric gated by eligibility |
+| **Batch analysis** | Not implemented (an open item in the upstream plan) | `bdp pipeline batch` workflow |
+| **Failure semantics / reproducibility** | No structured stage results; ad-hoc output paths; no run manifest | Five distinct states — missing / rejected / failed / empty / success — + Run Manifest (config/input/model fingerprints, breakpoint resume) |
+
+**Completed the upstream's own open items.** The four unchecked items in the upstream README's development plan are all implemented here:
+
+- [ ] More stable hit-point recognition → physical-rule hit / landing classification (the shuttle touches the floor exactly once per rally)
+- [ ] More accurate shuttlecock detection model → integrated TrackNet multi-frame deep detection
+- [ ] More complete technique statistics → eligibility-gated tactical analysis (hit/landing/distance/coverage/area occupancy)
+- [ ] Batch video analysis workflow → `bdp pipeline batch`
+
+Engineering: 122 tests, CUDA acceleration (RTMPose player stage ~603s CPU → ~41s CUDA), H.264 browser-compatible export.
 
 ## Quick Start
 

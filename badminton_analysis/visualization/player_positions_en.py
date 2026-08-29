@@ -792,7 +792,7 @@ if __name__ == "__main__":
         root.withdraw()
         
         # Set default directory
-        default_dir = "results"
+        default_dir = "outputs"
         if not os.path.exists(default_dir):
             default_dir = os.getcwd()
         

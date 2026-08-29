@@ -15,6 +15,7 @@ env/
 # Local inputs and generated outputs
 material/
 results/
+outputs/
 *.log
 
 # Badminton data-process local datasets and experiment artifacts

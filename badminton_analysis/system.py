@@ -109,7 +109,7 @@ class BadmintonAnalysisSystem:
 
         self.video_path = video_path
         self.video_name = os.path.basename(self.video_path)[:-4]
-        self.save_dir = output_dir or os.path.join('results', self.video_name)
+        self.save_dir = output_dir or os.path.join('outputs', self.video_name)
         os.makedirs(self.save_dir, exist_ok=True)
         self.images_save_dir = os.path.join(self.save_dir, 'detect_images')
         os.makedirs(self.images_save_dir, exist_ok=True)
@@ -131,14 +131,14 @@ class BadmintonAnalysisSystem:
             yolo_ball_model=self.yolo_ball_model,
             trajectory_length=30,
             show_trajectory=self.show_shuttlecock_trajectory,
-            show_performance_stats=self.show_performance_stats
+            show_performance_stats=False
         )
         
         self.player_pose_visualizer = PlayerPoseVisualizer(
             rtmpose_processor=self.rtmpose_processor,
             show_skeletons=self.show_skeletons,
             show_player_trajectories=self.show_player_trajectories,
-            show_performance_stats=self.show_performance_stats
+            show_performance_stats=False
         )
         
 
@@ -158,8 +158,14 @@ class BadmintonAnalysisSystem:
 
         self.frame_width = 0
         self.frame_height = 0
-    def process_video(self):
-        """Process the input video."""
+        self.performance_log_interval_frames = 150
+    def process_video(self, progress_callback=None):
+        """Process the input video.
+
+        Args:
+            progress_callback: Optional callable(frame_count, total_frames)
+                invoked after each frame so callers can report progress.
+        """
         self.start_time = time.time()
 
         cap = cv2.VideoCapture(self.video_path)
@@ -174,6 +180,7 @@ class BadmintonAnalysisSystem:
         
 
         self.fps = fps
+        self.performance_log_interval_frames = max(1, int(fps * 5))
         
 
         template_path = self._get_template_path()
@@ -215,6 +222,8 @@ class BadmintonAnalysisSystem:
                 break
             frame_count += 1
             frame, detect_frame_count = self._process_frame(frame, template_gray, corners, roi_corners, frame_count, out, detect_frame_count)
+            if progress_callback is not None:
+                progress_callback(frame_count, total_frames)
 
         self.end_time = time.time()
         processing_time = self.end_time - self.start_time
@@ -302,12 +311,19 @@ class BadmintonAnalysisSystem:
             cv2.putText(frame, "Pose ROI", (x1, max(24, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2, cv2.LINE_AA)
 
 
+        pose_t0 = time.time()
         centroids, point_left_hands, point_right_hands = self.player_pose_visualizer.detect_players(roi, x1, y1)
+        pose_elapsed = time.time() - pose_t0
+
+        ball_t0 = time.time()
         detected_ball_position = self.shuttlecock_tracker.detect_ball(frame, roi_corners=roi_corners)
+        ball_elapsed = time.time() - ball_t0
         ball_position = self.shuttlecock_tracker.update_trajectory(detected_ball_position, roi_corners)
         
 
+        shuttle_draw_t0 = time.time()
         self.shuttlecock_tracker.handle_visualization(frame)
+        shuttle_draw_elapsed = time.time() - shuttle_draw_t0
         
 
         players = self.player_tracker.update(frame_count, centroids, ball_position, 
@@ -324,6 +340,12 @@ class BadmintonAnalysisSystem:
             self.last_stats_update_frame = frame_count
 
 
+        should_log_performance = (
+            self.show_performance_stats
+            and self.performance_log_interval_frames > 0
+            and frame_count % self.performance_log_interval_frames == 0
+        )
+
         t0 = time.time()
 
         self.player_pose_visualizer.draw_players(
@@ -334,16 +356,24 @@ class BadmintonAnalysisSystem:
             rally_count=self.rally_count
         )
         t1 = time.time()
-        if self.show_performance_stats:
-            print(f"Drawing players took {t1 - t0:.2f} sec")
+        players_draw_elapsed = t1 - t0
         
 
+        court_draw_elapsed = 0.0
         if self.show_court_trajectory:
             t0 = time.time()
             frame = self.court_trajectory_visualizer.draw_overlay(frame, self.player_tracker.court_history)
             t1 = time.time()
-            if self.show_performance_stats:
-                print(f"Drawing court trajectory took {t1 - t0:.2f} sec")
+            court_draw_elapsed = t1 - t0
+
+        if should_log_performance:
+            print(
+                f"Frame {frame_count}: pose {pose_elapsed:.2f}s, "
+                f"shuttlecock {ball_elapsed:.2f}s, "
+                f"shuttle draw {shuttle_draw_elapsed:.2f}s, "
+                f"players draw {players_draw_elapsed:.2f}s, "
+                f"court draw {court_draw_elapsed:.2f}s"
+            )
         
 
         if frame is not None:
@@ -425,7 +455,8 @@ class BadmintonAnalysisSystem:
                 mid_height = eval(f.readline().split('=')[1])
                 roi_corners = compute_expanded_roi(corners, template_color.shape)
         else:
-            corners, roi_corners, mid_height = annotate_court(template_color)
+            auto_preview_path = os.path.join(self.save_dir, 'auto_court_preview.png')
+            corners, roi_corners, mid_height = annotate_court(template_color, auto_preview_path=auto_preview_path)
        
         if not corners or not roi_corners or len(corners) != 4 or len(roi_corners) != 2:
             raise RuntimeError("Court annotation is incomplete: click 4 court corners in order. ROI is generated automatically.")

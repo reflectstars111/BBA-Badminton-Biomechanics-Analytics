@@ -1,5 +1,14 @@
-﻿import cv2
+import cv2
 import numpy as np
+
+from .reference import (
+    BADMINTON_BACK_SERVICE_OFFSET,
+    BADMINTON_COURT_LENGTH,
+    BADMINTON_COURT_WIDTH,
+    BADMINTON_SERVICE_LINE_FROM_NET,
+    BADMINTON_SINGLES_MARGIN,
+)
+from .detector import auto_detect_court_corners, render_auto_court_preview
 
 
 class CourtMapper:
@@ -12,7 +21,6 @@ class CourtMapper:
         """
         self.image_court_corners = np.array(image_court_corners, dtype=np.float32)
         self.court_dimensions = court_dimensions
-        # Adjust court_points to set origin at bottom-left corner
         court_points = np.array([
             [0, 0], [court_dimensions[0], 0],
             [court_dimensions[0], court_dimensions[1]], [0, court_dimensions[1]]
@@ -51,27 +59,37 @@ class CourtMapper:
         transformed_points = cv2.perspectiveTransform(points, self.inv_matrix)
         return np.round(transformed_points[0][0], 2)
 
+    def _line_to_image(self, start, end):
+        return self.court_to_image(np.array(start)), self.court_to_image(np.array(end))
+
     def compute_court_overlay(self):
-        thirds = [2.033, 4.066]
-        self.vertical_lines = []
-        for x in thirds:
-            top = np.array([x, 0])
-            bottom = np.array([x, 13.4])
-            top_image = self.court_to_image(top)
-            bottom_image = self.court_to_image(bottom)
-            self.vertical_lines.append((top_image, bottom_image))
+        width, length = self.court_dimensions
+        scale_x = width / BADMINTON_COURT_WIDTH
+        scale_y = length / BADMINTON_COURT_LENGTH
+        singles_margin = BADMINTON_SINGLES_MARGIN * scale_x
+        net_y = length / 2.0
+        service_top = net_y - BADMINTON_SERVICE_LINE_FROM_NET * scale_y
+        service_bottom = net_y + BADMINTON_SERVICE_LINE_FROM_NET * scale_y
+        back_service_top = BADMINTON_BACK_SERVICE_OFFSET * scale_y
+        back_service_bottom = length - BADMINTON_BACK_SERVICE_OFFSET * scale_y
+        center_x = width / 2.0
 
-        ninths = np.linspace(0, 13.4, 11)
-        self.horizontal_lines = []
-        for y in ninths:
-            left = np.array([0, y])
-            right = np.array([6.1, y])
-            left_image = self.court_to_image(left)
-            right_image = self.court_to_image(right)
-            self.horizontal_lines.append((left_image, right_image))
+        self.vertical_lines = [
+            self._line_to_image((singles_margin, 0), (singles_margin, length)),
+            self._line_to_image((width - singles_margin, 0), (width - singles_margin, length)),
+            self._line_to_image((center_x, 0), (center_x, service_top)),
+            self._line_to_image((center_x, service_bottom), (center_x, length)),
+        ]
+        self.horizontal_lines = [
+            self._line_to_image((0, back_service_top), (width, back_service_top)),
+            self._line_to_image((0, service_top), (width, service_top)),
+            self._line_to_image((0, net_y), (width, net_y)),
+            self._line_to_image((0, service_bottom), (width, service_bottom)),
+            self._line_to_image((0, back_service_bottom), (width, back_service_bottom)),
+        ]
 
-        left_mid = np.array([0, 6.7])
-        right_mid = np.array([6.1, 6.7])
+        left_mid = np.array([0, net_y])
+        right_mid = np.array([width, net_y])
         left_mid_image = self.court_to_image(left_mid)
         right_mid_image = self.court_to_image(right_mid)
         self.mid_height = int((left_mid_image[1] + right_mid_image[1]) / 2)
@@ -112,7 +130,78 @@ def compute_expanded_roi(court_corners, image_shape):
     return [(x1, y1), (x2, y2)]
 
 
-def annotate_court(image):
+def auto_detect_preview(image):
+    """
+    Run auto court detection and return the result without any GUI.
+
+    Args:
+        image: Court template image (BGR numpy array).
+
+    Returns:
+        (corners, preview_bgr) where *corners* is a list of 4 (x, y) tuples
+        in the original image resolution (or None if detection failed), and
+        *preview_bgr* is an annotated preview image (BGR numpy array).
+    """
+    if not isinstance(image, np.ndarray):
+        return None, None
+
+    original_height, original_width = image.shape[:2]
+    fixed_size = (1080, 720)
+    base_image = cv2.resize(image, fixed_size)
+
+    auto_corners, _line_mask, auto_debug = auto_detect_court_corners(base_image)
+    if auto_corners:
+        roi_corners = compute_expanded_roi(auto_corners, base_image.shape)
+        preview = render_auto_court_preview(base_image, auto_corners, roi_corners, auto_debug)
+        scale_x = original_width / fixed_size[0]
+        scale_y = original_height / fixed_size[1]
+        original_corners = [(int(x * scale_x), int(y * scale_y)) for x, y in auto_corners]
+        return original_corners, preview
+    else:
+        preview = render_auto_court_preview(base_image, None, None, auto_debug)
+        return None, preview
+
+
+def resolve_court_corners(image, manual_corners=None):
+    """
+    Headless court corner resolution — no GUI windows.
+
+    If *manual_corners* (4 points in the original image resolution) are
+    provided they are used directly.  Otherwise auto-detection is attempted
+    on a 1080x720 resize and the results are scaled back.
+
+    Args:
+        image: Court template image (BGR numpy array).
+        manual_corners: Optional list of 4 (x, y) tuples.
+
+    Returns:
+        (corners, roi_corners, mid_height) — same contract as annotate_court.
+        Returns (None, None, None) on failure.
+    """
+    if not isinstance(image, np.ndarray):
+        return None, None, None
+
+    original_height, original_width = image.shape[:2]
+
+    if manual_corners and len(manual_corners) == 4:
+        corners = [(int(x), int(y)) for x, y in manual_corners]
+    else:
+        fixed_size = (1080, 720)
+        base_image = cv2.resize(image, fixed_size)
+        auto_corners, _line_mask, _debug = auto_detect_court_corners(base_image)
+        if not auto_corners:
+            return None, None, None
+        scale_x = original_width / fixed_size[0]
+        scale_y = original_height / fixed_size[1]
+        corners = [(int(x * scale_x), int(y * scale_y)) for x, y in auto_corners]
+
+    roi_corners = compute_expanded_roi(corners, image.shape)
+    court_mapper = CourtMapper(corners)
+    _, mid_height = court_mapper.draw_court_overlay(image)
+    return corners, roi_corners, mid_height
+
+
+def annotate_court(image, auto_preview_path=None):
     """
     Interactive tool to annotate court corners on an image.
     Returns court corners plus an automatically expanded ROI.
@@ -124,6 +213,35 @@ def annotate_court(image):
     original_height, original_width = image.shape[:2]
     fixed_size = (1080, 720)
     base_image = cv2.resize(image, fixed_size)
+
+    auto_corners, _line_mask, auto_debug = auto_detect_court_corners(base_image)
+    if auto_corners:
+        auto_roi_corners = compute_expanded_roi(auto_corners, base_image.shape)
+        auto_preview = render_auto_court_preview(base_image, auto_corners, auto_roi_corners, auto_debug)
+        if auto_preview_path:
+            cv2.imwrite(auto_preview_path, auto_preview)
+
+        cv2.namedWindow("Auto court detection")
+        cv2.imshow("Auto court detection", auto_preview)
+        print(f"Auto court preview saved: {auto_preview_path or 'auto_court_preview.png'}")
+        print("Press Enter/Y to accept auto detection; press M/R/Esc for manual annotation.")
+        while True:
+            key = cv2.waitKey(1) & 0xFF
+            if key in (13, 10, ord('y'), ord('Y')):
+                cv2.destroyWindow("Auto court detection")
+                scale_x = original_width / fixed_size[0]
+                scale_y = original_height / fixed_size[1]
+                original_corners = [(int(x * scale_x), int(y * scale_y)) for x, y in auto_corners]
+                original_roi_corners = [(int(x * scale_x), int(y * scale_y)) for x, y in auto_roi_corners]
+                court_mapper = CourtMapper(auto_corners)
+                _, auto_mid_height = court_mapper.draw_court_overlay(base_image)
+                return original_corners, original_roi_corners, int(auto_mid_height * scale_y)
+            if key in (27, ord('m'), ord('M'), ord('r'), ord('R')):
+                cv2.destroyWindow("Auto court detection")
+                break
+    elif auto_preview_path:
+        cv2.imwrite(auto_preview_path, render_auto_court_preview(base_image, None, None, auto_debug))
+        print(f"No reliable auto court boundary found. Debug preview saved: {auto_preview_path}")
 
     corners = []
     mid_height = [680]
@@ -212,6 +330,7 @@ def annotate_court(image):
     original_mid_height = int(mid_height[0] * scale_y)
     return original_corners, original_roi_corners, original_mid_height
 
+
 if __name__ == "__main__":
     image_path = r'images/Weixin Screenshot_00001.png'
     corners = [(426, 385), (861, 382), (996, 667), (288, 668)]
@@ -223,5 +342,3 @@ if __name__ == "__main__":
     cv2.waitKey()
     for centroid in centroids:
         mapped_positions = court_mapper.image_to_court(centroid)
-
-

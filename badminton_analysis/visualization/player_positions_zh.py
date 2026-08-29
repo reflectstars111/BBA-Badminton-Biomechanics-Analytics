@@ -13,27 +13,20 @@ import matplotlib.font_manager as fm
 # 设置全局绘图风格为深色
 plt.style.use('dark_background')
 
-# 设置中文字体 - 使用simhei.ttf
+# 设置中文字体 - 使用项目根目录的 simhei.ttf
 def _load_chinese_font():
-    module_dir = os.path.dirname(os.path.abspath(__file__))
-    package_root = os.path.abspath(os.path.join(module_dir, '..', '..', '..'))
-    workspace_root = os.path.abspath(os.path.join(package_root, '..'))
-    candidates = [
-        os.path.join(module_dir, 'simhei.ttf'),
-        os.path.join(package_root, 'simhei.ttf'),
-        os.path.join(workspace_root, 'simhei.ttf'),
-        os.path.join(os.getcwd(), 'simhei.ttf'),
-    ]
-
-    for font_path in candidates:
-        if os.path.exists(font_path):
-            plt.rcParams['font.family'] = ['sans-serif']
-            plt.rcParams['font.sans-serif'] = ['SimHei']
-            plt.rcParams['axes.unicode_minus'] = False
-            return fm.FontProperties(fname=font_path)
-
+    font_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'simhei.ttf'))
     plt.rcParams['axes.unicode_minus'] = False
-    return None
+
+    if not os.path.exists(font_path):
+        return None
+
+    fm.fontManager.addfont(font_path)
+    font_prop = fm.FontProperties(fname=font_path)
+    font_name = font_prop.get_name()
+    plt.rcParams['font.family'] = [font_name, 'sans-serif']
+    plt.rcParams['font.sans-serif'] = [font_name]
+    return font_prop
 
 
 chinese_font = _load_chinese_font()
@@ -754,7 +747,13 @@ class PlayerPositionVisualizer:
         plt.xlabel('场地宽度 (米)', color='white', fontproperties=chinese_font)
         plt.ylabel('场地长度 (米)', color='white', fontproperties=chinese_font)
         plt.tick_params(colors='white')  # 坐标轴刻度标签改为白色
-        plt.legend(loc='upper right', facecolor='#333333', edgecolor='#666666', labelcolor='white')
+        plt.legend(
+            loc='upper right',
+            facecolor='#333333',
+            edgecolor='#666666',
+            labelcolor='white',
+            prop=chinese_font,
+        )
         
         # Save plot
         save_path = os.path.join(self.output_dir, 'scatter_plots', filename)
@@ -823,7 +822,7 @@ if __name__ == "__main__":
         root.withdraw()
         
         # Set default directory
-        default_dir = "results"
+        default_dir = "outputs"
         if not os.path.exists(default_dir):
             default_dir = os.getcwd()
         

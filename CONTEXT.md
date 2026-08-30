@@ -1,4 +1,4 @@
-# Good-Badminton 领域上下文
+# BBA · Badminton Biomechanics Analytics 领域上下文
 
 本文件记录新研究管线中需要保持稳定的领域词汇。它描述“数据代表什么”，不描述具体模型或脚本怎样实现。
 

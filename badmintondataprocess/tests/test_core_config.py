@@ -24,6 +24,7 @@ def test_load_default_config_contains_pipeline_sections() -> None:
     assert config["demo_rendering"]["output_filename"] == "badminton_analysis_demo.mp4"
     parsed = parse_config(config)
     assert parsed.main_view.threshold == 0.75
+    assert parsed.main_view.max_reject_score == 0.4
     assert parsed.court_calibration.min_stable_candidates == 2
     assert parsed.demo_rendering.enabled is True
 
@@ -47,9 +48,14 @@ def test_strict_config_reports_all_invalid_fields_with_paths() -> None:
         parse_config(
             {
                 "obsolete_outputs": {},
-                "main_view": {"sample_every": 0, "threshold": 1.2},
+                "main_view": {
+                    "sample_every": 0,
+                    "threshold": 1.2,
+                    "max_reject_score": -0.1,
+                },
                 "player_tracking": {
                     "roles": ["far"],
+                    "court_mask_margin_ratio": 1.1,
                     "tracker": "bytetrack",
                 },
                 "smoothing": {"max_gap_frames": -1},
@@ -61,7 +67,9 @@ def test_strict_config_reports_all_invalid_fields_with_paths() -> None:
     assert "player_tracking.tracker: unknown key" in message
     assert "main_view.sample_every: must be > 0" in message
     assert "main_view.threshold: must be in [0, 1]" in message
+    assert "main_view.max_reject_score: must be in [0, 1]" in message
     assert "player_tracking.roles: supported values" in message
+    assert "player_tracking.court_mask_margin_ratio: must be in [0, 1]" in message
     assert "smoothing.max_gap_frames: must be >= 0" in message
 
 
@@ -98,6 +106,24 @@ def test_all_england_rtmpose_profile_keeps_tracknet_shuttle_model() -> None:
     assert config["player_tracking"]["rtmpose_device"] == "cuda"
     assert config["shuttle_tracking"]["model"] == "tracknet"
     assert config["shuttle_tracking"]["tracknet_weights"] == "weights/TrackNet_best.pt"
+
+
+def test_low_angle_profile_reuses_gpu_pipeline_with_view_specific_gates() -> None:
+    root = discover_project_root(Path(__file__))
+    config = load_config(
+        root / "configs/experiments/lindan_2026_low_angle.yaml",
+        root=root,
+    )
+    parsed = parse_config(config)
+
+    assert parsed.main_view.max_reject_score == 0.65
+    assert parsed.court_calibration.max_out_of_bounds_ratio == 0.25
+    assert max(parsed.court_calibration.reference_points or []) > 1.0
+    assert parsed.player_tracking.court_mask_margin_ratio == 0.025
+    assert parsed.rally_segmentation.min_top_green_ratio == 0.0
+    assert parsed.rally_segmentation.max_gap_seconds == 0.75
+    assert parsed.player_tracking.rtmpose_device == "cuda"
+    assert parsed.shuttle_tracking.model == "tracknet"
     assert config["shuttle_tracking"]["tracknet_device"] == "cuda"
 
 

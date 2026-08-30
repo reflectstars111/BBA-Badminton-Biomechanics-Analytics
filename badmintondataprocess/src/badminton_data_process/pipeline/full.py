@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from badminton_data_process.core.config import load_config
 from badminton_data_process.core.config_schema import PipelineConfig, parse_config
@@ -105,6 +105,7 @@ def prepare_full_analysis(
     *,
     config_path: Path | None = None,
     root: Path | None = None,
+    config_overrides: dict[str, Any] | None = None,
 ) -> FullAnalysisRequest:
     """Resolve and validate everything needed before creating a run directory."""
 
@@ -113,7 +114,7 @@ def prepare_full_analysis(
     if not selected_config.is_absolute():
         selected_config = project_root / selected_config
     selected_config = selected_config.resolve()
-    config = load_config(selected_config, root=project_root)
+    config = load_config(selected_config, overrides=config_overrides, root=project_root)
     cfg = parse_config(config)
     resolved_input = validate_full_analysis_environment(input_video, cfg, project_root)
     return FullAnalysisRequest(
@@ -246,8 +247,15 @@ def run_full_analysis(
     root: Path | None = None,
     runs_dir: Path | None = None,
     force: bool = False,
+    config_overrides: dict[str, Any] | None = None,
+    progress_callback: Callable[[str, int, int], None] | None = None,
 ) -> tuple[Path, dict[str, Any]]:
-    request = prepare_full_analysis(input_video, config_path=config_path, root=root)
+    request = prepare_full_analysis(
+        input_video,
+        config_path=config_path,
+        root=root,
+        config_overrides=config_overrides,
+    )
     resolved_run_id = run_id or make_run_id("full_analysis")
     layout = RunLayout.create(
         request.project_root,
@@ -268,6 +276,8 @@ def run_full_analysis(
         root=request.project_root,
         force=force,
         runs_dir=runs_dir,
+        config_overrides=config_overrides,
+        progress_callback=progress_callback,
     )
     summary = build_analysis_summary(run_dir)
     write_json(run_dir / "analysis_summary.json", summary)

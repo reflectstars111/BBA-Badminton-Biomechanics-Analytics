@@ -1,39 +1,44 @@
-# Domain override for the 2020 All England broadcast camera in material/.
-# The standard full-court view scores around 0.40-0.52 because its detected
-# court geometry differs from the production reference. A longer merge gap
-# prevents those low-scoring samples from fragmenting one rally into many
-# tiny Main View intervals. This is a complete production-derived profile
-# because configuration files merge with default.yaml, not with one another.
+# A user-declared gameplay-only clip from a generic low camera. It deliberately
+# does not reuse any frozen sample's manual homography.
 main_view:
   sample_every: 15
-  threshold: 0.40
-  max_reject_score: 0.4
-  min_segment_seconds: 1.5
-  max_gap_seconds: 3.0
+  threshold: 0.0
+  max_reject_score: 1.0
+  min_segment_seconds: 0.1
+  max_gap_seconds: 21600.0
 
 rally_segmentation:
   sample_every: 10
-  min_rally_seconds: 2.0
-  max_rally_seconds: 90.0
-  max_gap_seconds: 2.0
-  pre_context_seconds: 2.2
-  post_context_seconds: 1.4
-  min_active_samples: 2
-  min_motion_score: 0.008
+  min_rally_seconds: 0.1
+  max_rally_seconds: 21600.0
+  max_gap_seconds: 21600.0
+  pre_context_seconds: 0.0
+  post_context_seconds: 0.0
+  min_active_samples: 1
+  min_motion_score: 0.0
+  max_motion_score: 1.0
+  min_center_green_ratio: 0.0
+  min_bottom_green_ratio: 0.0
+  min_line_ratio: 0.0
+  min_top_green_ratio: 0.0
+  min_middle_green_ratio: 0.0
+  max_left_right_green_diff: 1.0
+  min_top_dark_ratio: 0.0
+  min_middle_edge_ratio: 0.0
 
 court_calibration:
   reference_points: null
-  detector: hybrid
+  detector: hough_low_angle
   min_line_support: 0.45
   min_area_ratio: 0.08
-  max_out_of_bounds_ratio: 0.0
+  max_out_of_bounds_ratio: 0.25
   stability_corner_rmse_ratio: 0.05
   min_stable_candidates: 2
 
 player_tracking:
   detector: rtmpose
   roles: [near, far]
-  court_mask_margin_ratio: 0.0
+  court_mask_margin_ratio: 0.025
   pose_keypoint_confidence: 0.35
   pose_min_keypoints: 5
   rtmpose_mode: balanced

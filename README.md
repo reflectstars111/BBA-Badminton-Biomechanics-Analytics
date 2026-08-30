@@ -1,148 +1,209 @@
-# Good-Badminton · 研究级羽毛球转播分析管线 🏸
+# BBA · Badminton Biomechanics Analytics
 
-> **基于 [yo-WASSUP/Good-Badminton](https://github.com/yo-WASSUP/Good-Badminton) 的二次开发。**
->
-> 上游是一个「逐帧检测 + 轨迹可视化」的羽毛球比赛视频分析工具；本项目在其计算机视觉能力之上，
-> 重构为一条面向论文级视觉分析、**可复现、质量门控**的研究数据处理管线。
+> 羽毛球生物力学与比赛视频智能分析系统
 
 [中文](README.md) · [English](README_EN.md)
 
----
+BBA 将一段羽毛球比赛视频处理为可复核的分析视频、球员姿态与场地坐标、羽毛球轨迹、逐回合统计、热力图和结构化数据。系统支持包含采访、回放、特写与切镜头的未清洗转播，也支持用户已经裁切好的比赛片段。
 
-## 与上游的关系
+项目当前重点不是堆叠演示效果，而是建立一条统一、可恢复、带质量门控的研究管线：CLI、批处理和 WebUI 消费同一套 Pipeline Interface；失败、拒绝、无数据与成功具有明确语义；所有正式结果都保留在可审计的 Run Manifest 中。
 
-本项目 fork 自 [yo-WASSUP/Good-Badminton](https://github.com/yo-WASSUP/Good-Badminton)（上游作者 yo-WASSUP，Apache License 2.0）。
+## 当前能力
 
-- **保留**上游的 CV 能力与交互：RTMPose / RTMO / YOLO Pose 多姿态模型、YOLO 羽毛球检测、球场坐标映射思路、Gradio WebUI。
-- **新增** `badmintondataprocess/` 研究管线：从**未剪辑的完整转播**自动清洗出可用回合，再完成标定、跟踪、平滑与战术分析，并全程产出可审计、可复现的运行记录。
-- **冻结**上游的 `main.py` 演示管线，仅作为兼容入口保留，不再新增算法职责。
-
-## 我们的优势（相对上游）
-
-> 以下对比依据上游当前 [README](https://github.com/yo-WASSUP/Good-Badminton) 及其「开发计划」。
-
-| 维度 | 上游 yo-WASSUP | 本项目 |
+| 能力 | 当前状态 | 说明 |
 | --- | --- | --- |
-| **输入 / 标定** | 需选球场模板图或手动四点标定（自动检测白/黄球场线） | 未剪辑完整转播，自动清洗 + 自动 Validated Calibration |
-| **回合识别** | 基于球场模板匹配的「连续比赛画面」，无法区分回放/特写 | Main View 门禁 + Usable Rally 切分，自动剔除采访/回放/特写/计分牌/切视角 |
-| **球场标定验证** | 自动匹配白/黄球场线 + WebUI 手动四点修正，候选无独立验证 | Hough 白线 + 13 条规则线支持率 + 几何/重投影/凸性/时序稳定性多帧验证，证据不足**明确拒绝而非猜测** |
-| **羽毛球检测** | 单帧 YOLO 检测 | TrackNet 多帧深度检测，约 93% 密集可见轨迹 |
-| **球员定位** | 检测框 / 关键点直接投影到球场 | RTMPose 姿态 + **双锚点**（躯干中心 / 地面接触点分离），正式米制坐标只来自地面接触点 |
-| **运动统计** | 移动距离、速度、回合数（击球点为实验功能） | 击球/落点（物理规则：每拍羽毛球落地恰好一次）、跑动距离、覆盖面积、站位区域占比，每项指标带资格门控 |
-| **批量分析** | 未实现（上游开发计划中的待办） | `bdp pipeline batch` 批量工作流 |
-| **失败语义 / 可复现** | 无结构化阶段结果，输出目录拼接、无运行清单 | missing / rejected / failed / empty / success 五态分离 + Run Manifest（配置/输入/模型指纹、断点 resume） |
+| 未清洗转播自动清洗 | 已实现 | Main View 检测与 Usable Rally 切分，过滤采访、回放、特写、计分牌和明显切镜头 |
+| 已裁切片段分析 | 已实现 | 可跳过素材清洗判断，将整段作为比赛素材进入后续流程 |
+| 俯视 / 标准转播视角 | 已实现 | 当前主要验证范围 |
+| 低视角 / 侧面固定机位 | 实验性 | 使用单独配置；严重透视和遮挡时建议手动确认场地 |
+| 自动球场标定 | 已实现 | 基于白色规则线、几何关系、重投影、凸性和稳定性验证 |
+| 标准球场模型手动修正 | 已实现 | 标注两条纵线和两条横线，可由 6.10 m × 13.40 m 模型推导画外角点 |
+| 双端球员检测与骨骼 | 已实现 / 实验性 | RTMPose CUDA；near/far 是场地角色，不等于稳定运动员身份 |
+| 球员米制场地定位 | 已实现 | 使用脚踝 / 地面接触锚点投影；躯干中心仅用于姿态与展示 |
+| 羽毛球轨迹 | 已实现 | TrackNet 多帧检测，保留 observed / interpolated / missing 语义并限制大跨度插值 |
+| 运动数据与图表 | 已实现 | 移动距离、速度、覆盖率、重心相对高度、站位区域、轨迹、散点和热力图 |
+| 骨骼动作细节分析 | 开发中 | 计划加入击球动作分类、挥拍阶段、关节角度、稳定性和步法分析 |
 
-**补全了上游自身的待办。** 上游 README「开发计划」中未勾选的四项，本项目均已落地：
+当前自动化测试：**147 项**。生产配置支持 NVIDIA CUDA、RTMPose 和 TrackNet GPU 推理，并输出浏览器兼容的 H.264 分析视频。
 
-- [ ] 更稳定的击球点识别 → 物理规则分类击球 / 落点（每拍羽毛球落地恰好一次）
-- [ ] 更精确的羽毛球检测模型 → 集成 TrackNet 多帧深度检测
-- [ ] 更完整的技术动作统计 → 资格门控的战术分析（击球/落点/跑动/覆盖/区域占比）
-- [ ] 批量视频分析工作流 → `bdp pipeline batch`
+## 一键启动 BBA WebUI
 
-工程方面：122 项测试、CUDA 加速（RTMPose 人物阶段 CPU ~603s → CUDA ~41s）、H.264 浏览器兼容导出。
+### Windows CMD
 
-## 快速开始
+在 CMD 中进入仓库目录后运行：
 
-### 环境
+```cmd
+cd /d F:\Good-Badminton
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File F:\Good-Badminton\start_webui.ps1
+```
 
-需要 CUDA 版 PyTorch + ONNX Runtime。项目自带可复现的 Conda 环境：
+如果仓库不在 `F:\Good-Badminton`，请替换为实际绝对路径。启动完成后访问：
+
+```text
+http://127.0.0.1:7860
+```
+
+启动脚本会查找或首次创建 `good-badminton` Conda 环境，安装缺少的 WebUI / RTMPose 依赖，然后启动本地浏览器工作区。首次创建环境需要下载 CUDA 与模型运行依赖，耗时会明显长于后续启动。视频与分析结果默认只保留在当前计算机。
+
+### WebUI 工作流
+
+1. 上传比赛视频；
+2. 选择“未裁切 / 已裁切”和“俯视 / 低视角”；
+3. 检查系统挑选的代表帧与自动球场标定；
+4. 接受自动结果，或使用标准球场模型线进行手动修正；
+5. 启动完整分析；
+6. 查看实时阶段、帧级进度、预计剩余时间和运行日志；
+7. 下载分析视频、图表、JSON、CSV 与 Run Manifest。
+
+WebUI 的预计用时不是固定倒计时。球员跟踪和 TrackNet 会实时上报“已处理帧 / 总帧数”；系统只有获得当前阶段真实吞吐后才计算 ETA。无法获得可靠阶段内进度时会显示“正在测量当前阶段”，不会输出没有依据的数字。
+
+分析报告按比赛概览、球员全局统计、球员逐回合统计、羽毛球逐回合统计和质量诊断组织。界面会明确显示数据覆盖率、标定资格与能力边界；尚未具备可靠依据的骨骼动作细节分析统一标记为“开发中”。
+
+## 场地标定
+
+正式米制指标依赖 **Validated Calibration**。系统不会仅因为算法返回了四个点就认定标定成功。
+
+自动标定会综合检查：
+
+- 主要白色场地边线及其线段支持率；
+- 四边形面积、顺序、凸性和画面边界关系；
+- 标准球场模型重投影误差与 Homography 条件数；
+- 多个代表时间点之间的角点稳定性；
+- 低视角下的透视与可见边线约束。
+
+自动结果不正确时，可在 WebUI 中选择实际可见的两条纵线和两条横线，并在每条线上点击两个相距较远的点。系统拟合无限直线、求交点，并通过标准双打球场模型推导完整外框，因此手动角点允许位于视频边界以外。
+
+一次确认只适用于同一固定机位。如果视频中实际比赛画面也频繁更换机位，应拆分素材或分别确认，不能复用单个 Homography。
+
+## 完整分析管线
+
+```text
+Source Match
+  -> Main View 清洗
+  -> Usable Rally 切分
+  -> Validated Calibration
+  -> RTMPose 球员检测 / 骨骼 / 地面接触点
+  -> TrackNet 羽毛球轨迹
+  -> 受约束的轨迹平滑与异常插值过滤
+  -> 热力图、散点图与轨迹图
+  -> 资格门控的统计 / 战术诊断
+  -> H.264 分析视频与结构化报告
+```
+
+九个阶段均写入 Run Manifest。WebUI 进度条读取真实阶段结果，球员和羽毛球跟踪阶段进一步使用帧级进度；同一 `run-id` 可以安全恢复，输入或配置变化时会拒绝混用旧产物。
+
+## 分析结果
+
+### 球员指标
+
+- near / far 场地角色；
+- 有效帧、跟踪覆盖率和骨骼有效率；
+- 全场及逐回合移动距离；
+- 当前、平均和稳健最高移动速度；
+- 平均重心相对高度；
+- 前场、中场、后场站位占比；
+- 米制球场轨迹、散点图和热力图。
+
+球员地面位置优先使用双脚踝中点，单脚有效时降级为单脚，姿态不可用时才退回检测框底部。锚点来源、置信度和有效性会写入轨迹数据。
+
+### 羽毛球指标
+
+- 有效观测帧与可见率；
+- observed / interpolated / missing 状态；
+- 当前、平均和稳健最高图像速度；
+- 屏幕对角线归一化速度；
+- 逐回合轨迹和调试视频。
+
+羽毛球在空中运动，单目视频不能仅通过地面 Homography 恢复可信三维米制球速或正式落点。因此 BBA 当前明确报告图像平面速度；击球、落点和完整战术结论仍属于实验研究范围，不以伪精确数值冒充正式结果。
+
+## 命令行使用
+
+### 环境安装
 
 ```powershell
 conda env create -f badmintondataprocess/environment.yml
 conda activate good-badminton
-python -m pip install -e "badmintondataprocess/."
-python -m pip install rtmlib==0.0.16 --no-deps   # 避免覆盖 onnxruntime-gpu
+python -m pip install -e "badmintondataprocess/.[ui,yaml]"
+python -m pip install rtmlib==0.0.16 --no-deps
 bdp verify
 ```
 
-### 一键分析未剪辑转播
+`rtmlib` 使用 `--no-deps` 安装，避免把现有 `onnxruntime-gpu` 替换成 CPU 版本。
 
-一条命令，从包含采访、回放、特写和切视角的完整转播视频，产出清洗后的回合、标定、轨迹、统计图和最终分析视频：
+### 一键分析未清洗转播
 
 ```powershell
 bdp analyze F:\material\match.mp4 --run-id match_full_analysis
 ```
 
-也可用 PowerShell 薄入口（自动定位 `good-badminton` 环境）：
-
-```powershell
-.\badmintondataprocess\scripts\run_full_analysis.ps1 `
-  -InputVideo "F:\Good-Badminton\material\example.mp4" `
-  -RunId example_full_analysis
-```
-
-首次在新机器/新素材上运行前，先做只读预检（核对解码、配置、RTMPose/TrackNet 权重与 CUDA，不创建运行目录）：
+首次在新机器或新素材上运行前，可执行只读预检：
 
 ```powershell
 bdp analyze F:\material\match.mp4 --preflight-only
 ```
 
-### 分阶段管线
-
-```bash
-bdp pipeline run raw_videos/match.mp4 --run-id match_manual --config configs/experiments/synthetic_smoke.yaml
-```
-
-同一 `run-id` 可安全恢复中断任务；源视频或配置变化时会拒绝混用旧产物，确认重跑才加 `--force`。
-
-## 管线流程
+### 统一 CLI
 
 ```text
-原始转播 -> Main View 清洗 -> Usable Rally 切分 -> 自动 Validated Calibration
-         -> RTMPose CUDA 双端骨骼 -> TrackNet CUDA -> 轨迹平滑/统计
-         -> 图表与战术诊断 -> 合并 H.264 分析视频
-```
-
-重点产物：
-
-```text
-runs/<run-id>/analysis_summary.json
-runs/<run-id>/rallies/                          # 自动清洗后的可用回合
-runs/<run-id>/annotations/court_calibration/    # 每回合已验证标定
-runs/<run-id>/annotations/*_tracks_smoothed.csv
-runs/<run-id>/outputs/tracking_charts/
-runs/<run-id>/outputs/demo/badminton_full_analysis.mp4
-```
-
-## 统一 CLI
-
-CLI、批处理与 WebUI 共用同一条管线 Interface，不存在语义不同的平行实现：
-
-```text
-bdp analyze <video>             # 一键完整转播分析
+bdp analyze <video>             # 一键完整分析
 bdp pipeline run / batch        # 分阶段 / 批量运行
 bdp rally segment               # 回合切分
 bdp calibrate                   # 球场标定
 bdp track players / shuttle     # 球员 / 羽毛球跟踪
 bdp smooth                      # 轨迹平滑
-bdp tactics analyze             # 战术分析
-bdp render demo                 # 演示视频重渲染
+bdp tactics analyze             # 战术诊断
+bdp render demo                 # 分析视频重渲染
 bdp compare trackers            # 跟踪器对照
-bdp webui                       # 浏览器界面
+bdp webui                       # BBA 浏览器界面
 bdp verify                      # 环境自检
+```
+
+## 运行产物
+
+```text
+runs/<run-id>/manifest.json
+runs/<run-id>/analysis_summary.json
+runs/<run-id>/webui_report.json
+runs/<run-id>/rallies/
+runs/<run-id>/annotations/court_calibration/
+runs/<run-id>/annotations/player_tracks*.csv
+runs/<run-id>/annotations/shuttle_tracks*.csv
+runs/<run-id>/outputs/tracking_charts/
+runs/<run-id>/outputs/demo/badminton_full_analysis.mp4
 ```
 
 ## 目录结构
 
 ```text
 badmintondataprocess/
-├── src/badminton_data_process/   # 研究管线包（core / main_view / rally /
-│                                 #   calibration / tracking / smoothing /
-│                                 #   tactics / visualization / media / webui）
-├── scripts/                      # 兼容命令入口 + 一键分析 PowerShell 脚本
-├── configs/                      # default / experiments / production(full_video_gpu)
-├── tests/                        # 122 项测试
-└── docs/                         # 架构、迁移与实施计划
+├── src/badminton_data_process/
+│   ├── core / pipeline / main_view / rally
+│   ├── calibration / tracking / smoothing / tactics
+│   ├── visualization / media / review
+│   └── webui
+├── configs/                    # default / production / experiments / webui
+├── scripts/                    # PowerShell 与兼容入口
+├── tests/                      # 147 项自动化测试
+├── docs/                       # 架构与迁移计划
+└── runs/                       # 每次运行的独立产物目录
 ```
 
-## 能力边界（诚实声明）
+## 能力边界
 
-- 双端球员定位（near/far 场地角色）与击球/落点事件属于 **experimental**，不等于稳定运动员身份或完整战术结论；近端定位是当前优先验证的范围。
-- 演示视频是 **Diagnostic Demo**，用于排错与展示已验证产物，不作为模型正确性的证据。
-- 冻结标注集（Main View / rally / 球场角点 / 球员脚点 / 羽毛球真值）仍在建立中，precision / recall / ID switch 等精度指标尚未在真实标注上形成基线。
+- 低视角、双端身份保持、击球归属、落点与完整战术结论仍是实验能力；
+- near / far 只表示球网两侧的场地角色，不等于跨回合稳定运动员身份；
+- Diagnostic Demo 用于展示与排错，不是精度证明；
+- 没有通过标定质量门控的数据不能产生正式米制指标；
+- 冻结真实标注集仍在建设中，precision、recall、ID switch 等基准尚未完整发布。
 
-## 致谢与许可
+## 与上游的关系
 
-感谢上游 [yo-WASSUP/Good-Badminton](https://github.com/yo-WASSUP/Good-Badminton) 及其贡献者，以及 RTMPose / RTMO / OpenMMLab、[rtmlib](https://github.com/Tau-J/rtmlib)、[Ultralytics](https://github.com/ultralytics/ultralytics)、[TrackNet](https://github.com/yastrebksv/TrackNet) 提供的算法与数据基础。
+本项目基于 [yo-WASSUP/Good-Badminton](https://github.com/yo-WASSUP/Good-Badminton) 继续开发（上游作者 yo-WASSUP，Apache License 2.0）。
+
+- 保留并迁移 RTMPose / RTMO / YOLO Pose、羽毛球检测和球场映射相关经验；
+- 新增 `badmintondataprocess/` 统一研究管线、质量门控、Run Manifest、批处理和 BBA WebUI；
+- 根目录旧 `main.py` 演示入口保持冻结，仅用于兼容，不再承担新算法职责。
+
+感谢上游项目及其贡献者，以及 RTMPose / RTMO / OpenMMLab、[rtmlib](https://github.com/Tau-J/rtmlib)、[Ultralytics](https://github.com/ultralytics/ultralytics) 和 [TrackNet](https://github.com/yastrebksv/TrackNet) 提供的算法与工程基础。
 
 本项目沿用上游 Apache License 2.0。

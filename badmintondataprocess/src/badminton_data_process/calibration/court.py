@@ -8,7 +8,10 @@ from typing import Any
 import cv2
 import numpy as np
 
-from badminton_data_process.calibration.hough import generate_hough_candidates
+from badminton_data_process.calibration.hough import (
+    generate_hough_candidates,
+    generate_low_angle_hough_candidates,
+)
 from badminton_data_process.calibration.reference import STANDARD_COURT, score_court_line_support
 from badminton_data_process.calibration.validation import (
     CalibrationCandidate,
@@ -158,6 +161,8 @@ def detect_court_corners(frame: np.ndarray) -> np.ndarray:
 def normalized_corners(
     frame_shape: tuple[int, int, int],
     points: list[float] | list[list[float]] | tuple[tuple[float, float], ...],
+    *,
+    allow_out_of_bounds: bool = False,
 ) -> np.ndarray:
     height, width = frame_shape[:2]
     corners = np.asarray(points, dtype=np.float32)
@@ -165,7 +170,7 @@ def normalized_corners(
         corners = corners.reshape(4, 2)
     if corners.shape != (4, 2):
         raise ValueError("reference court points must contain four x,y pairs")
-    if np.any(corners < 0.0) or np.any(corners > 1.0):
+    if not allow_out_of_bounds and (np.any(corners < 0.0) or np.any(corners > 1.0)):
         raise ValueError("reference court points must be normalized from 0 to 1")
     corners[:, 0] *= width
     corners[:, 1] *= height
@@ -191,7 +196,11 @@ def _frame_candidates(frame: np.ndarray, frame_index: int, detector: str) -> lis
     # never become the four formal Homography correspondences.
     if detector in {"hough", "hybrid"}:
         candidates.extend(generate_hough_candidates(frame, frame_index=frame_index))
-    if detector not in {"contour", "hough", "hybrid"}:
+    if detector == "hough_low_angle":
+        candidates.extend(
+            generate_low_angle_hough_candidates(frame, frame_index=frame_index)
+        )
+    if detector not in {"contour", "hough", "hybrid", "hough_low_angle"}:
         raise ValueError(f"unsupported court calibration detector: {detector}")
     return candidates
 
@@ -245,6 +254,16 @@ def draw_preview(
             cv2.LINE_AA,
         )
     return preview
+
+
+def _write_png(path: Path, image: np.ndarray) -> None:
+    """Write PNG bytes without OpenCV's Windows Unicode-path limitation."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ok, encoded = cv2.imencode(".png", image)
+    if not ok:
+        raise RuntimeError(f"failed to encode calibration preview: {path}")
+    path.write_bytes(encoded.tobytes())
 
 
 def _save_calibration(
@@ -313,6 +332,7 @@ def calibrate_video(
     *,
     detector: str = "contour",
     min_area_ratio: float = 0.08,
+    max_out_of_bounds_ratio: float = 0.0,
     max_condition_number: float = 1.0e10,
     max_reprojection_error_px: float = 1.0,
     stability_corner_rmse_ratio: float = 0.04,
@@ -324,6 +344,7 @@ def calibrate_video(
     thresholds = CalibrationThresholds(
         min_area_ratio=min_area_ratio,
         min_line_support=min_line_support,
+        max_out_of_bounds_ratio=max_out_of_bounds_ratio,
         max_condition_number=max_condition_number,
         max_reprojection_error_px=max_reprojection_error_px,
     )
@@ -334,7 +355,11 @@ def calibrate_video(
             frame, frame_index = representative_frame(capture)
             frame_by_index[frame_index] = frame
             candidate = CalibrationCandidate(
-                corners=normalized_corners(frame.shape, reference_points),
+                corners=normalized_corners(
+                    frame.shape,
+                    reference_points,
+                    allow_out_of_bounds=max_out_of_bounds_ratio > 0.0,
+                ),
                 source=CalibrationCandidateSource.MANUAL,
                 frame_index=frame_index,
             )
@@ -381,7 +406,10 @@ def calibrate_video(
             stability_corner_rmse_ratio=stability_corner_rmse_ratio,
             min_stable_candidates=min_stable_candidates,
         )
-        cv2.imwrite(str(output_preview), draw_preview(frame, selected, stable_frames=stable_frames))
+        _write_png(
+            output_preview,
+            draw_preview(frame, selected, stable_frames=stable_frames),
+        )
         return {
             "video_path": str(video_path),
             "video_stem": video_path.stem,
@@ -443,9 +471,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--preview-dir", type=Path, default=Path("outputs/court_calibration_debug"))
     parser.add_argument("--summary-csv", type=Path, default=Path("annotations/court_calibration_summary.csv"))
     parser.add_argument("--reference-points", default=None)
-    parser.add_argument("--detector", choices=("contour", "hough", "hybrid"), default="contour")
+    parser.add_argument(
+        "--detector",
+        choices=("contour", "hough", "hybrid", "hough_low_angle"),
+        default="contour",
+    )
     parser.add_argument("--min-line-support", type=float, default=0.15)
     parser.add_argument("--min-area-ratio", type=float, default=0.08)
+    parser.add_argument("--max-out-of-bounds-ratio", type=float, default=0.0)
     parser.add_argument("--max-condition-number", type=float, default=1.0e10)
     parser.add_argument("--max-reprojection-error-px", type=float, default=1.0)
     parser.add_argument("--stability-corner-rmse-ratio", type=float, default=0.04)
@@ -473,6 +506,7 @@ def main(argv: list[str] | None = None) -> int:
         min_line_support=args.min_line_support,
         detector=args.detector,
         min_area_ratio=args.min_area_ratio,
+        max_out_of_bounds_ratio=args.max_out_of_bounds_ratio,
         max_condition_number=args.max_condition_number,
         max_reprojection_error_px=args.max_reprojection_error_px,
         stability_corner_rmse_ratio=args.stability_corner_rmse_ratio,

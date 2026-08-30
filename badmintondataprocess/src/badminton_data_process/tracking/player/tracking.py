@@ -6,7 +6,7 @@ import math
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from badminton_data_process.calibration.reference import COURT_LENGTH_M, COURT_WIDTH_M, NET_Y_M
 from badminton_data_process.core.io import ensure_dir, read_csv_rows, write_csv_rows
@@ -140,9 +140,22 @@ def load_calibration(calibration_path: Path) -> tuple[np.ndarray, np.ndarray]:
     return corners, homography
 
 
-def build_court_mask(frame_shape: tuple[int, int, int], corners: np.ndarray) -> np.ndarray:
+def build_court_mask(
+    frame_shape: tuple[int, int, int],
+    corners: np.ndarray,
+    margin_ratio: float = 0.0,
+) -> np.ndarray:
+    if not 0.0 <= margin_ratio <= 1.0:
+        raise ValueError('margin_ratio must be in [0, 1]')
     mask = np.zeros(frame_shape[:2], dtype=np.uint8)
     cv2.fillConvexPoly(mask, corners.astype(np.int32), 255)
+    if margin_ratio > 0.0:
+        margin_px = max(1, int(round(min(frame_shape[:2]) * margin_ratio)))
+        kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE,
+            (margin_px * 2 + 1, margin_px * 2 + 1),
+        )
+        mask = cv2.dilate(mask, kernel, iterations=1)
     return mask
 
 
@@ -693,8 +706,10 @@ def process_video(
     near_max_missing_frames: int,
     far_max_missing_frames: int,
     role_half_tolerance: float,
+    court_mask_margin_ratio: float = 0.0,
     player_roles: tuple[str, ...] = ('near', 'far'),
     pose_config: PoseRuntimeConfig | None = None,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
     require_opencv()
     pose_config = pose_config or PoseRuntimeConfig()
@@ -726,7 +741,13 @@ def process_video(
     fps = capture.get(cv2.CAP_PROP_FPS) or 30.0
     width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
     height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
-    court_mask = build_court_mask((height, width, 3), corners)
+    total_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    strict_court_mask = build_court_mask((height, width, 3), corners)
+    court_mask = build_court_mask(
+        (height, width, 3),
+        corners,
+        margin_ratio=court_mask_margin_ratio,
+    )
     try:
         _, near_threshold_y = court_to_image_point(
             homography,
@@ -824,12 +845,14 @@ def process_video(
                 player_anchors[player_id] = anchors
                 ground_x = anchors.ground_contact.x
                 ground_y = anchors.ground_contact.y
-                if interpolated:
+                ground_pixel_x = min(width - 1, max(0, int(round(ground_x))))
+                ground_pixel_y = min(height - 1, max(0, int(round(ground_y))))
+                if interpolated or strict_court_mask[ground_pixel_y, ground_pixel_x] == 0:
                     # A predicted (missed-player) box can drift above the far
-                    # baseline or past the sidelines; projecting the off-court
-                    # feet through the homography extrapolates to absurd court
-                    # coords (e.g. court_y=-96). Clamp the projection point to
-                    # the court quad so the feet stay on court.
+                    # baseline or past the sidelines. A detected ankle may also
+                    # sit just outside a strongly foreshortened boundary while
+                    # remaining inside the configured mask margin. Clamp either
+                    # case before Homography projection so the feet stay on court.
                     ground_x, ground_y = clamp_to_court_quad((ground_x, ground_y), corners)
                 court_x, court_y = project_point(homography, (ground_x, ground_y))
                 rows.append(
@@ -895,6 +918,10 @@ def process_video(
             )
             writer.write(debug_frame)
             frame_id += 1
+            if progress_callback is not None and (
+                frame_id == total_frames or frame_id % 10 == 0
+            ):
+                progress_callback(frame_id, total_frames)
     except Exception as exc:  # pragma: no cover - runtime dependent
         capture.release()
         writer.release()
@@ -937,15 +964,30 @@ def track_players(
     near_max_missing_frames: int,
     far_max_missing_frames: int,
     role_half_tolerance: float,
+    court_mask_margin_ratio: float = 0.0,
     player_roles: tuple[str, ...] = ('near', 'far'),
     pose_config: PoseRuntimeConfig | None = None,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> int:
     if not player_roles or any(role not in {'near', 'far'} for role in player_roles):
         raise ValueError("player_roles must contain 'near', 'far', or both")
     videos = iter_video_paths(input_path)
+    frame_counts: list[int] = []
+    for video_path in videos:
+        capture = cv2.VideoCapture(str(video_path))
+        frame_counts.append(int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0))
+        capture.release()
+    total_frames = sum(frame_counts)
+    completed_frames = 0
+    if progress_callback is not None:
+        progress_callback(0, total_frames)
     all_rows: list[dict[str, object]] = []
     summaries: list[dict[str, object]] = []
-    for video_path in videos:
+    for video_path, video_frames in zip(videos, frame_counts):
+        def report_video_progress(current: int, _total: int) -> None:
+            if progress_callback is not None:
+                progress_callback(completed_frames + current, total_frames)
+
         rows, summary = process_video(
             video_path=video_path,
             calibration_dir=calibration_dir,
@@ -959,12 +1001,17 @@ def track_players(
             near_max_missing_frames=near_max_missing_frames,
             far_max_missing_frames=far_max_missing_frames,
             role_half_tolerance=role_half_tolerance,
+            court_mask_margin_ratio=court_mask_margin_ratio,
             player_roles=player_roles,
             pose_config=pose_config,
+            progress_callback=report_video_progress,
         )
         all_rows.extend(rows)
         summaries.append(summary)
         print(f"{video_path.name}: {summary['status']} ({summary['track_rows']} rows)")
+        completed_frames += video_frames
+        if progress_callback is not None:
+            progress_callback(completed_frames, total_frames)
 
     write_csv_rows(output_csv, TRACK_FIELDNAMES, all_rows)
     write_csv_rows(summary_csv, SUMMARY_FIELDNAMES, summaries)
@@ -1021,6 +1068,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=['near', 'far'],
         default=['near', 'far'],
         help='Court-side player roles to track; defaults to near and far.',
+    )
+    parser.add_argument(
+        '--court-mask-margin-ratio',
+        type=float,
+        default=0.0,
+        help='Normalized court-mask dilation for small pose ground-point errors.',
     )
     parser.add_argument(
         '--yolo-model',
@@ -1102,6 +1155,7 @@ def main(argv: list[str] | None = None) -> int:
         near_max_missing_frames=args.near_max_missing_frames,
         far_max_missing_frames=args.far_max_missing_frames,
         role_half_tolerance=args.role_half_tolerance,
+        court_mask_margin_ratio=args.court_mask_margin_ratio,
         player_roles=tuple(dict.fromkeys(args.roles)),
         pose_config=PoseRuntimeConfig(
             model_name=args.pose_model,

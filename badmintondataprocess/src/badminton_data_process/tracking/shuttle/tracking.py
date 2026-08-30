@@ -5,6 +5,7 @@ import json
 import math
 import re
 from pathlib import Path
+from typing import Callable
 
 from badminton_data_process.core.io import ensure_dir, read_csv_rows, write_csv_rows
 
@@ -234,6 +235,7 @@ def process_video_tracknet(
     max_missing_frames: int,
     device: str = 'auto',
     vis_threshold: float = 0.15,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
     """Track the shuttle using a TrackNet multi-frame detector."""
     from badminton_data_process.tracking.shuttle.tracknet import TrackNetDetector
@@ -267,7 +269,20 @@ def process_video_tracknet(
         frames.append(frame)
     capture.release()
 
-    detections = detector.detect_sequence(frames, {'search_mask': search_mask})
+    frame_count = len(frames)
+    total_work_units = frame_count * 2
+
+    def report_detection_progress(current: int, _total: int) -> None:
+        if progress_callback is not None:
+            progress_callback(current, total_work_units)
+
+    detections = detector.detect_sequence(
+        frames,
+        {
+            'search_mask': search_mask,
+            'progress_callback': report_detection_progress,
+        },
+    )
 
     debug_dir = ensure_dir(debug_dir)
     debug_video_path = debug_dir / f'{video_path.stem}.mp4'
@@ -342,6 +357,10 @@ def process_video_tracknet(
         )
         frame = frames[frame_id] if frame_id < len(frames) else frames[-1]
         writer.write(draw_debug(frame, corners, point, confidence, interpolated))
+        if progress_callback is not None and (
+            frame_id + 1 == frame_count or (frame_id + 1) % 10 == 0
+        ):
+            progress_callback(frame_count + frame_id + 1, total_work_units)
 
     writer.release()
     return rows, {
@@ -373,6 +392,7 @@ def process_video(
     tracknet_weights: str = '',
     tracknet_device: str = 'auto',
     tracknet_vis_threshold: float = 0.15,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
     if model == 'tracknet':
         return process_video_tracknet(
@@ -383,6 +403,7 @@ def process_video(
             max_missing_frames=max_missing_frames,
             device=tracknet_device,
             vis_threshold=tracknet_vis_threshold,
+            progress_callback=progress_callback,
         )
     require_opencv()
     capture = cv2.VideoCapture(str(video_path))
@@ -401,6 +422,7 @@ def process_video(
     fps = capture.get(cv2.CAP_PROP_FPS) or 30.0
     width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
     height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+    total_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
     corners = load_calibration(calibration_dir / f'{video_path.stem}.json')
     search_mask = build_search_mask((height, width, 3), corners)
 
@@ -510,6 +532,10 @@ def process_video(
 
         writer.write(draw_debug(frame, corners, point, confidence, interpolated))
         frame_id += 1
+        if progress_callback is not None and (
+            frame_id == total_frames or frame_id % 10 == 0
+        ):
+            progress_callback(frame_id, total_frames)
 
     capture.release()
     writer.release()
@@ -544,12 +570,28 @@ def track_shuttle(
     tracknet_weights: str = '',
     tracknet_device: str = 'auto',
     tracknet_vis_threshold: float = 0.15,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> int:
     videos = iter_video_paths(input_path)
+    frame_counts: list[int] = []
+    for video_path in videos:
+        capture = cv2.VideoCapture(str(video_path))
+        frame_counts.append(int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0))
+        capture.release()
+    multiplier = 2 if model == 'tracknet' else 1
+    work_units = [frame_count * multiplier for frame_count in frame_counts]
+    total_work_units = sum(work_units)
+    completed_work_units = 0
+    if progress_callback is not None:
+        progress_callback(0, total_work_units)
     all_rows: list[dict[str, object]] = []
     summaries: list[dict[str, object]] = []
 
-    for video_path in videos:
+    for video_path, video_work_units in zip(videos, work_units):
+        def report_video_progress(current: int, _total: int) -> None:
+            if progress_callback is not None:
+                progress_callback(completed_work_units + current, total_work_units)
+
         rows, summary = process_video(
             video_path=video_path,
             calibration_dir=calibration_dir,
@@ -567,6 +609,7 @@ def track_shuttle(
             tracknet_weights=tracknet_weights,
             tracknet_device=tracknet_device,
             tracknet_vis_threshold=tracknet_vis_threshold,
+            progress_callback=report_video_progress,
         )
         all_rows.extend(rows)
         summaries.append(summary)
@@ -574,6 +617,9 @@ def track_shuttle(
             f"{video_path.name}: {summary['status']} "
             f"(visible={summary['visible_rows']}, interpolated={summary['interpolated_rows']})"
         )
+        completed_work_units += video_work_units
+        if progress_callback is not None:
+            progress_callback(completed_work_units, total_work_units)
 
     write_csv_rows(output_csv, TRACK_FIELDNAMES, all_rows)
     write_csv_rows(summary_csv, SUMMARY_FIELDNAMES, summaries)

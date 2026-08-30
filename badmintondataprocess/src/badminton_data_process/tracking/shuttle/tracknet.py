@@ -192,6 +192,9 @@ class TrackNetDetector:
         ).astype(np.float32)
 
         detections: list[dict] = []
+        progress_callback = context.get("progress_callback")
+        if callable(progress_callback):
+            progress_callback(0, len(frames))
         with torch.no_grad():
             for start in range(len(frames)):
                 x = self._build_input(frames, median_chw, start)
@@ -202,22 +205,26 @@ class TrackNetDetector:
                     detections.append(
                         {"frame_id": start, "x": None, "y": None, "confidence": 0.0, "visibility": 0}
                     )
-                    continue
-                binary = (heatmap > self.vis_threshold).astype(np.uint8)
-                center = _largest_blob_center(binary)
-                if center is None:
-                    detections.append(
-                        {"frame_id": start, "x": None, "y": None, "confidence": 0.0, "visibility": 0}
-                    )
-                    continue
-                cx, cy = center
-                detections.append(
-                    {
-                        "frame_id": start,
-                        "x": round(cx * width / WIDTH, 2),
-                        "y": round(cy * height / HEIGHT, 2),
-                        "confidence": round(peak, 3),
-                        "visibility": 1,
-                    }
-                )
+                else:
+                    binary = (heatmap > self.vis_threshold).astype(np.uint8)
+                    center = _largest_blob_center(binary)
+                    if center is None:
+                        detections.append(
+                            {"frame_id": start, "x": None, "y": None, "confidence": 0.0, "visibility": 0}
+                        )
+                    else:
+                        cx, cy = center
+                        detections.append(
+                            {
+                                "frame_id": start,
+                                "x": round(cx * width / WIDTH, 2),
+                                "y": round(cy * height / HEIGHT, 2),
+                                "confidence": round(peak, 3),
+                                "visibility": 1,
+                            }
+                        )
+                if callable(progress_callback) and (
+                    start + 1 == len(frames) or (start + 1) % 10 == 0
+                ):
+                    progress_callback(start + 1, len(frames))
         return detections

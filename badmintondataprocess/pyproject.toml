@@ -21,7 +21,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 yaml = ["PyYAML>=6.0"]
-ui = ["gradio>=5.0"]
+ui = ["gradio>=5.0,<6"]
 pose = ["rtmlib>=0.0.1", "onnxruntime>=1.18"]
 
 [project.scripts]

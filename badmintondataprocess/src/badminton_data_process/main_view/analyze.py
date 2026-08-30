@@ -132,6 +132,7 @@ def analyze_main_view(
     output_dir: Path,
     sample_every: int = 30,
     threshold: float = 0.75,
+    max_reject_score: float = 0.4,
     min_segment_seconds: float = 3.0,
     max_gap_seconds: float = 2.0,
 ) -> int:
@@ -155,7 +156,14 @@ def analyze_main_view(
         if frame_index % sample_every != 0:
             frame_index += 1
             continue
-        score, corners = score_frame(frame, frame_index, fps, previous_corners, threshold=threshold)
+        score, corners = score_frame(
+            frame,
+            frame_index,
+            fps,
+            previous_corners,
+            threshold=threshold,
+            max_reject_score=max_reject_score,
+        )
         if corners is not None and score.geometry_score >= 0.45:
             previous_corners = corners
         scores.append(score)
@@ -228,6 +236,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--runs-dir", type=Path, default=None)
     parser.add_argument("--sample-every", type=int, default=30)
     parser.add_argument("--threshold", type=float, default=0.75)
+    parser.add_argument("--max-reject-score", type=float, default=0.4)
     parser.add_argument("--min-segment-seconds", type=float, default=3.0)
     parser.add_argument("--max-gap-seconds", type=float, default=2.0)
     return parser
@@ -249,6 +258,7 @@ def main(argv: list[str] | None = None) -> int:
         output_dir=output_dir,
         sample_every=args.sample_every,
         threshold=args.threshold,
+        max_reject_score=args.max_reject_score,
         min_segment_seconds=args.min_segment_seconds,
         max_gap_seconds=args.max_gap_seconds,
     )

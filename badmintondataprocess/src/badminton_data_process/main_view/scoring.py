@@ -239,8 +239,9 @@ def reject_reason(
     reject: float,
     main_view: float,
     threshold: float,
+    max_reject_score: float = 0.4,
 ) -> str:
-    if main_view >= threshold and reject < 0.4:
+    if main_view >= threshold and reject < max_reject_score:
         return ""
     if reject >= 0.65:
         return "likely_closeup_or_replay"
@@ -259,6 +260,7 @@ def score_frame(
     fps: float,
     previous_corners: Any | None = None,
     threshold: float = 0.75,
+    max_reject_score: float = 0.4,
 ) -> tuple[FrameScore, Any | None]:
     require_opencv()
     line_ratio, middle_edge_ratio = edge_ratios(frame)
@@ -277,8 +279,16 @@ def score_frame(
         + 0.08 * line
         - 0.22 * reject
     )
-    is_main = int(main_view >= threshold and reject < 0.4)
-    reason = reject_reason(court, geometry, layout, reject, main_view, threshold)
+    is_main = int(main_view >= threshold and reject < max_reject_score)
+    reason = reject_reason(
+        court,
+        geometry,
+        layout,
+        reject,
+        main_view,
+        threshold,
+        max_reject_score,
+    )
     return (
         FrameScore(
             sample_frame=frame_index,
@@ -301,4 +311,3 @@ def score_frame(
         ),
         corners,
     )
-

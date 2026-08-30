@@ -91,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
     if argv[0] == "verify":
         return verify_main(argv[1:])
     if argv[0] == "webui":
-        return webui_main()
+        return webui_main(argv[1:])
 
     print(f"Unknown command: {' '.join(argv)}", file=sys.stderr)
     build_parser().print_help()

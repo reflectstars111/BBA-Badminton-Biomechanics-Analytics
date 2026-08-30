@@ -205,8 +205,8 @@ def select_stable_calibration(
     accepted = [result for result in results if result.accepted]
     if not accepted:
         return None, []
-    if len(accepted) == 1:
-        return accepted[0], [accepted[0].candidate.frame_index]
+    if len(accepted) < min_stable_candidates:
+        return None, [result.candidate.frame_index for result in accepted]
 
     clusters: list[list[CalibrationValidationResult]] = []
     for result in accepted:
@@ -238,7 +238,7 @@ def select_stable_calibration(
         clusters,
         key=lambda cluster: (len(cluster), sum(item.quality.quality_score for item in cluster)),
     )
-    if len(best_cluster) < min(min_stable_candidates, len(accepted)):
+    if len(best_cluster) < min_stable_candidates:
         return None, [item.candidate.frame_index for item in best_cluster]
     selected = max(best_cluster, key=lambda item: item.quality.quality_score)
     return selected, [item.candidate.frame_index for item in best_cluster]

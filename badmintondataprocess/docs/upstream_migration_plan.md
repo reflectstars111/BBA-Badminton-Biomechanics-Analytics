@@ -288,7 +288,7 @@ Hough Adapter 必须可由配置单独关闭；关闭后继续使用绿色轮廓
 
 ### MIG-06：WebUI 薄 Adapter
 
-状态：`implemented`（第一阶段：提交、状态和 Artifact 浏览）  
+状态：`implemented-phase-4`（统一提交、四模式、进度、强制确认、语义模型线和详细报告）
 前置条件：MIG-01 至 MIG-05 的核心 Interface 稳定  
 上游来源：`webui/app.py`  
 禁止复用：`webui/pipeline.py::run_analysis`
@@ -297,7 +297,7 @@ Hough Adapter 必须可由配置单独关闭；关闭后继续使用绿色轮廓
 
 - 视频和参考帧上传。
 - 自动球场候选预览。
-- 手工四点校正。
+- 标准球场语义线校正；由画面内可见线推导画外交点和完整外角。
 - 参数选择和配置摘要。
 - 运行进度、阶段状态和错误提示。
 - 视频、JSON、CSV、诊断图片和日志展示。
@@ -313,12 +313,14 @@ Hough Adapter 必须可由配置单独关闭；关闭后继续使用绿色轮廓
 
 #### 修改方向
 
-1. 第一阶段只实现运行配置提交、Run Manifest 状态读取和 Artifact 浏览。
-2. 第二阶段接入 Calibration Candidate 预览与手工修正。
-3. WebUI 输入先转换为与 CLI 相同的 Run Specification，再调用统一管线入口。
-4. 所有输出从 Run Layout 和 ArtifactReport 读取。
-5. 用户取消、失败、拒绝和无结果必须分别显示。
-6. 对 Near-only Analysis、Dual-side Observation 和实验性指标显示明确能力标签。
+1. 第一阶段实现运行配置提交、Run Manifest 状态读取和 Artifact 浏览。
+2. 第二阶段实现“未裁切/已裁切 × 俯视/低视角”四模式、后台进度、结果视频、逐球员/逐回合详细报告与下载。
+3. 第三阶段接入 Calibration Candidate 预览与手工四点修正；手动结果仍进入统一 validation Seam。
+4. 第四阶段以两纵两横语义线替代“必须看见四个外角”的主交互，将线标注带入标准球场模型并允许画外交点。
+4. WebUI 输入先转换为与 CLI 相同的 Run Specification，再调用统一管线入口。
+5. 所有输出从 Run Layout 和 ArtifactReport 读取。
+6. 用户取消、失败、拒绝和无结果必须分别显示。
+7. 对 Near-only Analysis、Dual-side Observation 和实验性指标显示明确能力标签。
 
 #### 验收标准
 
@@ -518,10 +520,10 @@ python -m compileall src scripts
 |---|---|---|---|---|
 | MIG-01 | implemented | 工作区修改，未提交 | `tests/test_calibration.py` | `calibration/reference.py` 为唯一球场几何事实来源 |
 | MIG-02 | implemented | 工作区修改，未提交 | `tests/test_calibration.py`、`tests/test_artifacts.py` | 所有候选统一经过 validation Seam |
-| MIG-03 | implemented | 工作区修改，未提交 | 合成 Hough、白线掩膜、hybrid 来源约束与真实素材 Run | 生产 hybrid 只允许 Hough 白线四角；更多真实正负冻结样本待补 |
+| MIG-03 | implemented-phase-2 | 工作区修改，未提交 | 合成 Hough、画外角点、稳定帧门槛、Unicode 预览与低视角真实素材 Run | 低视角使用独立候选器并惩罚内部规则矩形；更多真实正负冻结样本待补 |
 | MIG-04 | implemented | 工作区修改，未提交 | 稳定簇与离群候选测试 | 校准 JSON 记录全部采样帧和选择依据 |
 | MIG-05 | implemented | 工作区修改，未提交 | `tests/test_media_export.py` | 使用 `imageio-ffmpeg` 解析可执行文件；最终仍由视频 Artifact 检查兜底 |
-| MIG-06 | implemented-phase-1 | 工作区修改，未提交 | `tests/test_webui_adapter.py` | 已统一运行 Interface；候选点图形化拖拽属于第二阶段交互增强 |
+| MIG-06 | implemented-phase-4 | 工作区修改，未提交 | `tests/test_webui_adapter.py`、`tests/test_webui_reporting.py`、`tests/test_webui_court_annotation.py` | 已统一运行 Interface，并加入强制确认、语义模型线、画外交点、九阶段进度、结果视频和详细报告 |
 | MIG-07 | completed | 工作区修改，未提交 | 文档审计 | 见 `docs/upstream_resource_inventory.md` |
 | MIG-08 | implemented | 工作区修改，未提交 | `tests/test_player_anchors.py`、`tests/test_demo_rendering.py` | 默认 `yolo` 仍使用 bbox；启用姿态 Adapter 后优先消费肩、髋和脚踝 |
 | MIG-09 | implemented | 工作区修改，未提交 | `tests/test_pose.py`、`tests/test_demo_rendering.py` | RTMPose balanced 完整 rally：near 99.4%、far 94.4% 姿态有效率 |
@@ -536,6 +538,8 @@ python -m compileall src scripts
 - `media/export.py`：浏览器兼容导出 Implementation。
 - `webui/adapter.py`：CLI/WebUI 共用运行规范的薄 Adapter。
 - `webui/app.py`：可选 Gradio 表现层，不包含分析编排。
+- `webui/reporting.py`：UI 无关的比赛、球员、回合与羽球详细报告生成器；同时记录指标口径和实验能力边界。
+- `webui/court_annotation.py`：参考帧提取、语义模型线、画外交点/外角推导和统一校准验证 Adapter；不调用旧分析系统。
 - `tracking/player/pose.py`：YOLO Pose 与 RTMPose 共享姿态契约及两个 Implementation。
 
 ### 8.2 尚不能伪装为已完成的验收
@@ -543,11 +547,12 @@ python -m compileall src scripts
 - 仓库目前没有许可明确的真实冻结视频集，因此 Hough 在标准转播、遮挡、回放、观众席、绿色广告等正负样本上的指标尚未形成基线。
 - 默认 `detector: yolo` 不运行姿态模型；需要骨架时必须显式选择 `rtmpose` 或 `yolo_pose`，以便 Run Manifest 准确记录性能和能力变化。
 - 浏览器兼容导出已有命令契约和 Artifact 检查；Chrome、Edge、VS Code 播放器以及有声真实样本的人工验收仍需在具备授权媒体后执行。
-- WebUI 第一阶段已覆盖运行提交、Manifest 状态和 Artifact 浏览；自动候选预览与四点拖拽校正尚未进入 UI，现阶段继续通过统一配置中的 `court_calibration.reference_points` 提交。
+- WebUI 第四阶段已覆盖四类输入模式、Manifest 阶段进度、逐上传代表帧确认门、语义模型线与画外交点、H.264 结果视频、全场/逐回合详细指标及 JSON/CSV/图表下载。自动候选和模型推导结果都必须经用户明确确认；确认结果通过运行级配置覆盖进入同一校准验证 Seam。
+- WebUI 将球员场地平面移动显示为米制数据；羽毛球处于空中，只显示稳健图像平面速度，避免把地面 Homography 误用为三维球速。躯干中心高度为框高归一化的二维姿态估计。
 
 ### 8.3 本批验证记录
 
-- `python -m pytest -q`：`122 passed`。
+- `python -m pytest -q`：`145 passed`。
 - `python -m compileall -q src scripts`：通过。
 - `git diff --check`：无空白错误；仅报告工作区既有的 Windows CRLF 转换提示。
 - 使用本地 61 帧、852×480、30 FPS 样本执行真实 Media Export；FFmpeg 解码复核为 H.264 High、`yuv420p`、30 FPS，输出非空。
@@ -560,11 +565,27 @@ python -m compileall src scripts
 - GPU 未启用的根因不是硬件或驱动：原运行解释器安装的是 `torch 2.12.0+cpu` 和 CPU 版 `onnxruntime`，因此 TrackNet 与 RTMPose 的 `auto` 均选择 CPU。本机 RTX 5070、驱动 581.57 正常。
 - Conda `base` 不是有效环境；复用专用 `good-badminton` 环境（Python 3.12.13、PyTorch 2.11.0+cu128），补齐 `onnxruntime-gpu 1.29.0` 与 RTMLib。PyTorch 实测识别计算能力 12.0，ONNX Runtime 实测暴露 CUDA/TensorRT provider。
 - TrackNet CUDA 冒烟测试确认模型参数位于 `cuda:0`、峰值显存约 412 MB；492 帧 TrackNet Stage 耗时 24.544 秒并恢复到可见 471 帧、插值 10 帧，最终 H.264 演示产物成功。验证配置现对 RTMPose 与 TrackNet 显式要求 `cuda`，代码在 GPU provider 缺失时直接报错，不再静默回退 CPU。
+- 低视角真实回合复现了错误自动候选仍被标记成功的问题：旧候选与固定机位人工参考的归一化角点 RMSE 为 0.6033，且只有一个稳定帧仍绕过 `min_stable_candidates=2`。最低稳定帧数绕过问题已修复，但进一步诊断发现错误几何仍可在 5 个采样帧中稳定存在（RMSE 仍为 0.1568），证明时序稳定和规则线支持不能代替人工几何判断。WebUI 因此改为逐上传强制确认：从多个时间点选择代表帧，自动建议只供检查，用户必须接受或手动修正后才能启动分析。
+- 调研确认 BaddieVision、SoccerNet Calibration 和 TVCalib/PnLCalib 均采用“已知场地模型 + 语义线/点对应”思路；其中 BaddieVision 明确通过两纵两横可见线的无限交点支持裁出画面的羽毛球场角点。其仓库未声明许可证，因此本项目只采用公开算法思想并独立实现，没有复制源码。
+- WebUI 现以四条语义模型线共 8 个画面内点作为推荐手工入口；交点和完整双打外角由本项目唯一标准球场几何推导，最终仍通过新管线 validation Seam 并以运行级配置覆盖进入 Manifest。
+- 校准预览改用 `cv2.imencode` 后写入字节，修复 Windows 中文长文件名下 `cv2.imwrite` 静默不生成预览 Artifact 的问题。
 - 全新 GPU Run `rtmpose_tracknet_gpu_allengland_r001` 从头完成 9 个 Stage：RTMPose 人物 Stage 从 CPU 的 603.112 秒降至 40.967 秒，TrackNet 为 24.643 秒；输出 978 条人物轨迹（948 条有效姿态）和 492 条羽毛球轨迹（471 条可见、10 条插值），最终 H.264 演示视频成功。
 - 一键完整视频 Run `full_material_india2012_r001` 直接读取 `F:\Good-Badminton\material` 的 315 秒未清洗素材：识别 19 段 Main View，接受 4 个 Usable Rally、拒绝 27 个候选。白线纠偏后 4/4 标定均由 `hough_lines` 产生，完整线支持分数依次为 0.820、0.914、0.817、0.827；输出 700 条人物轨迹（698 条有效姿态）和 350 条羽毛球轨迹（343 条可见、1 条插值）。最终合并视频 350 帧/11.67 秒，经抽帧确认黄色外框贴合最外侧白色双打边线，骨骼、双端角色和完整俯视场地同步使用修正后的 Homography。旧标定下只有 538 条人物轨迹，说明错误绿色边缘也曾造成球员候选误裁剪。
 - 回合召回修正 Run `full_material_india2012_rally_recall_r002` 使用相同 315 秒素材：活动评分从全画面均值迁移为归一化球场主体区域局部帧差，生产阈值校准为 0.008、最少活动样本为 2、上下文恢复为 2.2/1.4 秒；同时修复 30.000033 FPS 下恰好 60 帧被浮点误判为不足 2 秒的问题。结果保持 19 段 Main View，接受 20 个 Usable Rally、仅拒绝 4 个子候选，20/20 标定、RTMPose 和 TrackNet 成功；输出 9620 条人物轨迹（9343 条有效姿态）和 5011 条羽毛球轨迹（4412 条可见、125 条插值）。最终 H.264 视频为 5011 帧/167.03 秒，首、中、末抽帧均确认是比赛主视角且白线、骨骼、羽毛球轨迹和完整俯视图存在。独立新包复跑 `full_material_india2012_rally_recall_r003` 再次得到 20 接受/4 拒绝，确认正式管线已使用 `rally/activity.py`，不是依赖旧脚本偶然生效。
 - 羽毛球越界跳线修正：生产配置关闭 TrackNet 缺失帧盲目外推；轨迹平滑新增 80 像素二维端点位移上限，演示和战术阶段不再回退消费被拒绝的原始插值点。对上述 5011 帧真实样本重做平滑后，补点由 155 行降至 80 行，保留补线最大端点位移 79.19 像素，超过阈值的补线为 0；修正版 20 回合演示视频和关键区间六帧检查图均已生成。
 - 一键入口新增 `-ValidateOnly`：使用真实 `material` 视频完成视频解码、生产配置、RTMPose CUDA、TrackNet CUDA 与权重预检，结果成功且不创建 Run；`analysis_summary.json` 同时记录 TrackNet 原始插值行数、平滑有效行数和获准短缺口补点数。
+
+### 8.4 低视角素材适配与远端球员回归
+
+低视角不新增平行分析步骤，继续复用 Main View、Rally、Calibration、RTMPose、TrackNet、Smoothing、Visualization、Tactics 和 Demo 九阶段主管线；视角差异只进入专用配置 `configs/experiments/lindan_2026_low_angle.yaml`。
+
+- Main View 将普通阈值与硬拒绝阈值拆分，低视角配置使用 `threshold: 0.28`、`max_reject_score: 0.65`，避免强透视画面被旧的固定 `0.4` 拒绝线整段清空。
+- Rally 活动门控不再假定标准转播画面的上、中、下绿色占比；本素材接受 46 个回合、拒绝 8 个候选，覆盖约 466.3 秒比赛画面。
+- 固定机位校准允许经过显式审核的角点位于画面外，`max_out_of_bounds_ratio: 0.25`；本素材 46/46 回合共享同一组白色边线几何并通过校准验证。该能力默认仍为 `0.0`，不会放宽普通转播配置。
+- 远端球员并非 RTMPose 漏检。真实帧中远端姿态有 16/17 个关键点通过 `0.35` 阈值，但脚踝中点位于强透视远端底线外约 15 像素，旧的严格球场掩膜在角色关联前删除了该候选，随后短缺口预测又可能把近端框错误延续为 far。
+- 新增 `player_tracking.court_mask_margin_ratio`。扩展掩膜只决定姿态候选能否进入角色关联；位于严格四边形外的脚踝仍先夹回正式球场边界，再进入 Homography 和米制统计，因而不会把观众、裁判或越界坐标引入平面分析。普通配置保持 `0.0`，低视角配置使用 `0.025`。
+- 冻结回合 015 的修复前后对比：基线 near/far 分别为 652/108 行；修复后为 703/789 行，共 1492 行、1386 行有效姿态。人工抽帧确认同一帧左侧远端球员标为 far、右侧近端球员标为 near，两套骨骼不再落到同一人。
+- 回归覆盖 `build_court_mask` 的严格/扩展边界、配置范围校验和低视角配置组合。完整重算 46/46 回合成功，人物轨迹由基线 22,492 行提升到 38,963 行：near 由 15,604 增至 16,731，far 由 6,888 增至 22,232，有效姿态 35,941 行。平滑后 far 的 20,464 个有效点均位于上半场，near 的 14,753 个有效点均位于下半场。修正版 23,315 帧 H.264 演示视频另存于原 Run 的 `review/player_margin_full`，保留修复前结果用于对照。
 
 ## 8. 完成定义
 

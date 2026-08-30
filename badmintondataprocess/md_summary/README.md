@@ -194,14 +194,13 @@ bdp render demo \
   --output runs/example/outputs/demo/badminton_analysis_demo.mp4
 ```
 
-可选研究 WebUI 与 CLI 调用同一个流水线 Interface：
+研究 WebUI 与 CLI 调用同一个流水线 Interface。仓库根目录可一键启动：
 
-```bash
-python -m pip install -e ".[ui]"
-bdp webui
+```powershell
+.\start_webui.ps1
 ```
 
-WebUI 从 Run Manifest 读取 `success`、`rejected`、`failed` 和 `empty`，不会维护另一条分析调用链，也不会自动清理历史运行目录。
+页面支持“未裁切/已裁切 × 俯视/低视角”四种输入模式，提供九阶段进度和强制场地确认门。每次上传或切换视角后，系统从多个时间点挑选一帧展示自动建议；用户必须明确接受，或在两条纵向、两条横向语义白线上各点两个可见点。系统把线标注带入标准 6.10 m × 13.40 m 球场模型，通过无限直线交点推导可位于画外的完整双打外角，再进入统一校准验证。确认结果作为本次 Run 配置进入 Manifest。分析完成后展示 H.264 视频、球员全场与逐回合移动/速度/姿态/站位指标、羽球轨迹质量和稳健图像速度，并提供图表、JSON、CSV 与 Manifest 下载。骨骼动作分类、挥拍阶段、关节角度和步法细节明确标为“正在开发中”。
 
 校验比赛元数据：
 

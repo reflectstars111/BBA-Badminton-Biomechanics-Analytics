@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any, Callable
 
 from badminton_data_process.calibration.court import calibrate_courts
 from badminton_data_process.core.artifacts import (
@@ -97,9 +98,11 @@ def run_pipeline(
     skip_demo: bool = False,
     force: bool = False,
     runs_dir: Path | None = None,
+    config_overrides: dict[str, Any] | None = None,
+    progress_callback: Callable[[str, int, int], None] | None = None,
 ) -> Path:
     project_root = root or discover_project_root()
-    config = load_config(config_path, root=project_root)
+    config = load_config(config_path, overrides=config_overrides, root=project_root)
     cfg = parse_config(config)
     resolved_run_id = run_id or make_run_id("pipeline")
     layout = RunLayout.create(
@@ -164,6 +167,7 @@ def run_pipeline(
                     output_dir=main_view_dir,
                     sample_every=main_view_cfg.sample_every,
                     threshold=main_view_cfg.threshold,
+                    max_reject_score=main_view_cfg.max_reject_score,
                     min_segment_seconds=main_view_cfg.min_segment_seconds,
                     max_gap_seconds=main_view_cfg.max_gap_seconds,
                 ),
@@ -307,6 +311,7 @@ def run_pipeline(
                 min_line_support=calibration_cfg.min_line_support,
                 detector=calibration_cfg.detector,
                 min_area_ratio=calibration_cfg.min_area_ratio,
+                max_out_of_bounds_ratio=calibration_cfg.max_out_of_bounds_ratio,
                 max_condition_number=calibration_cfg.max_condition_number,
                 max_reprojection_error_px=calibration_cfg.max_reprojection_error_px,
                 stability_corner_rmse_ratio=calibration_cfg.stability_corner_rmse_ratio,
@@ -406,6 +411,7 @@ def run_pipeline(
                     near_max_missing_frames=player_cfg.near_max_missing_frames,
                     far_max_missing_frames=player_cfg.far_max_missing_frames,
                     role_half_tolerance=player_cfg.role_half_tolerance,
+                    court_mask_margin_ratio=player_cfg.court_mask_margin_ratio,
                     player_roles=tuple(player_cfg.roles),
                     pose_config=PoseRuntimeConfig(
                         model_name=player_cfg.pose_model,
@@ -418,6 +424,13 @@ def run_pipeline(
                         rtmpose_pose_model=player_cfg.rtmpose_pose_model,
                         rtmpose_detector_input_size=tuple(player_cfg.rtmpose_detector_input_size),
                         rtmpose_pose_input_size=tuple(player_cfg.rtmpose_pose_input_size),
+                    ),
+                    progress_callback=(
+                        (lambda current, total: progress_callback(
+                            StageName.PLAYER_TRACKING.value, current, total
+                        ))
+                        if progress_callback is not None
+                        else None
                     ),
                 ),
                 operation="player tracking",
@@ -468,6 +481,13 @@ def run_pipeline(
                     tracknet_weights=shuttle_cfg.tracknet_weights,
                     tracknet_device=shuttle_cfg.tracknet_device,
                     tracknet_vis_threshold=shuttle_cfg.tracknet_vis_threshold,
+                    progress_callback=(
+                        (lambda current, total: progress_callback(
+                            StageName.SHUTTLE_TRACKING.value, current, total
+                        ))
+                        if progress_callback is not None
+                        else None
+                    ),
                 ),
                 operation="shuttle tracking",
             )

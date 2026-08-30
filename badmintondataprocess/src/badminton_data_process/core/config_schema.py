@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import types
 from dataclasses import MISSING, dataclass, fields
 from pathlib import Path
@@ -99,6 +100,7 @@ class DataConfig:
 class MainViewConfig:
     sample_every: int = 30
     threshold: float = 0.75
+    max_reject_score: float = 0.4
     min_segment_seconds: float = 3.0
     max_gap_seconds: float = 2.0
 
@@ -133,6 +135,7 @@ class CourtCalibrationConfig:
     detector: str = "contour"
     min_line_support: float = 0.15
     min_area_ratio: float = 0.08
+    max_out_of_bounds_ratio: float = 0.0
     max_condition_number: float = 1.0e10
     max_reprojection_error_px: float = 1.0
     stability_corner_rmse_ratio: float = 0.04
@@ -143,6 +146,7 @@ class CourtCalibrationConfig:
 class PlayerTrackingConfig:
     detector: str = "yolo"
     roles: list[str] | None = None
+    court_mask_margin_ratio: float = 0.0
     yolo_model: str = "yolov8n.pt"
     yolo_confidence: float = 0.25
     yolo_image_size: int = 640
@@ -271,6 +275,7 @@ def _validate(cfg: PipelineConfig, errors: list[str]) -> None:
 
     _positive(errors, "main_view.sample_every", cfg.main_view.sample_every)
     _ratio(errors, "main_view.threshold", cfg.main_view.threshold)
+    _ratio(errors, "main_view.max_reject_score", cfg.main_view.max_reject_score)
     _positive(errors, "main_view.min_segment_seconds", cfg.main_view.min_segment_seconds)
     _nonnegative(errors, "main_view.max_gap_seconds", cfg.main_view.max_gap_seconds)
 
@@ -320,13 +325,19 @@ def _validate(cfg: PipelineConfig, errors: list[str]) -> None:
     )
 
     calibration = cfg.court_calibration
-    if calibration.detector not in {"contour", "hough", "hybrid"}:
+    if calibration.detector not in {"contour", "hough", "hybrid", "hough_low_angle"}:
         errors.append(
-            "court_calibration.detector: must be one of ['contour', 'hough', 'hybrid'], "
+            "court_calibration.detector: must be one of "
+            "['contour', 'hough', 'hybrid', 'hough_low_angle'], "
             f"got {calibration.detector!r}"
         )
     _ratio(errors, "court_calibration.min_line_support", calibration.min_line_support)
     _ratio(errors, "court_calibration.min_area_ratio", calibration.min_area_ratio, open_lower=True)
+    _ratio(
+        errors,
+        "court_calibration.max_out_of_bounds_ratio",
+        calibration.max_out_of_bounds_ratio,
+    )
     _positive(errors, "court_calibration.max_condition_number", calibration.max_condition_number)
     _nonnegative(
         errors,
@@ -347,7 +358,13 @@ def _validate(cfg: PipelineConfig, errors: list[str]) -> None:
                 f"(8 values), got {len(calibration.reference_points)}"
             )
         for index, value in enumerate(calibration.reference_points):
-            _ratio(errors, f"court_calibration.reference_points[{index}]", value)
+            path = f"court_calibration.reference_points[{index}]"
+            if calibration.max_out_of_bounds_ratio == 0.0:
+                _ratio(errors, path, value)
+            elif not math.isfinite(value) or not -2.0 <= value <= 3.0:
+                errors.append(
+                    f"{path}: must be finite and in [-2, 3] when off-frame corners are enabled"
+                )
 
     player = cfg.player_tracking
     if player.detector not in {"heuristic", "yolo", "yolo_pose", "rtmpose"}:
@@ -361,6 +378,11 @@ def _validate(cfg: PipelineConfig, errors: list[str]) -> None:
             "player_tracking.roles: supported values are ['near'] or ['near', 'far'], "
             f"got {player.roles!r}"
         )
+    _ratio(
+        errors,
+        "player_tracking.court_mask_margin_ratio",
+        player.court_mask_margin_ratio,
+    )
     if player.detector == "yolo" and not player.yolo_model.strip():
         errors.append("player_tracking.yolo_model: must not be blank for detector='yolo'")
     if player.detector == "yolo_pose" and not player.pose_model.strip():

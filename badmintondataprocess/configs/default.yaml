@@ -28,6 +28,7 @@ rally_segmentation:
 main_view:
   sample_every: 30
   threshold: 0.75
+  max_reject_score: 0.4
   min_segment_seconds: 3.0
   max_gap_seconds: 2.0
 
@@ -36,6 +37,7 @@ court_calibration:
   detector: contour
   min_line_support: 0.15
   min_area_ratio: 0.08
+  max_out_of_bounds_ratio: 0.0
   max_condition_number: 10000000000.0
   max_reprojection_error_px: 1.0
   stability_corner_rmse_ratio: 0.04
@@ -46,6 +48,7 @@ player_tracking:
   roles:
     - near
     - far
+  court_mask_margin_ratio: 0.0
   yolo_model: yolov8n.pt
   yolo_confidence: 0.25
   yolo_image_size: 640

@@ -1,39 +1,40 @@
-# General end-to-end profile for uncleaned broadcast videos with interviews,
-# replays, close-ups, scoreboards, and camera cuts. Main View and Usable Rally
-# gates remove unsuitable frames before calibration and tracking.
+# Generic low-angle upload profile. Unlike the Lindan frozen-sample profile,
+# this file never reuses camera-specific manual corners.
 main_view:
   sample_every: 15
-  threshold: 0.55
-  max_reject_score: 0.4
+  threshold: 0.28
+  max_reject_score: 0.65
   min_segment_seconds: 1.5
-  max_gap_seconds: 0.75
+  max_gap_seconds: 3.0
 
 rally_segmentation:
   sample_every: 10
   min_rally_seconds: 2.0
   max_rally_seconds: 90.0
-  max_gap_seconds: 2.0
+  max_gap_seconds: 0.75
   pre_context_seconds: 2.2
   post_context_seconds: 1.4
   min_active_samples: 2
-  # Wide-view players occupy too little of the complete broadcast frame for
-  # the historical 0.01 global mean-difference gate. This threshold applies
-  # to the normalized court/play-area motion score.
   min_motion_score: 0.008
+  min_center_green_ratio: 0.18
+  min_bottom_green_ratio: 0.25
+  min_top_green_ratio: 0.0
+  min_middle_green_ratio: 0.0
+  min_top_dark_ratio: 0.0
 
 court_calibration:
   reference_points: null
-  detector: hybrid
+  detector: hough_low_angle
   min_line_support: 0.45
   min_area_ratio: 0.08
-  max_out_of_bounds_ratio: 0.0
+  max_out_of_bounds_ratio: 0.25
   stability_corner_rmse_ratio: 0.05
   min_stable_candidates: 2
 
 player_tracking:
   detector: rtmpose
   roles: [near, far]
-  court_mask_margin_ratio: 0.0
+  court_mask_margin_ratio: 0.025
   pose_keypoint_confidence: 0.35
   pose_min_keypoints: 5
   rtmpose_mode: balanced
@@ -45,12 +46,9 @@ shuttle_tracking:
   tracknet_weights: weights/TrackNet_best.pt
   tracknet_device: cuda
   tracknet_vis_threshold: 0.15
-  # Do not extrapolate when the shuttle leaves the frame; resume from a new
-  # observed point instead of drawing a synthetic jump back into view.
   max_missing_frames: 0
 
 smoothing:
-  # Short gaps are filled only when their observed endpoints stay nearby.
   shuttle_max_interpolation_displacement_px: 80.0
 
 demo_rendering:

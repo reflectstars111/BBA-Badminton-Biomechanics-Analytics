@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from badminton_data_process.legacy import load_legacy_module
 from badminton_data_process.tracking.player import tracking
@@ -152,3 +153,25 @@ def test_near_only_tracking_does_not_create_far_role() -> None:
     )
 
     assert set(selected) == {"near"}
+
+
+def test_court_mask_margin_admits_small_pose_error_outside_far_baseline() -> None:
+    corners = np.asarray([[20, 30], [180, 30], [190, 180], [10, 180]], dtype=np.float32)
+
+    strict = tracking.build_court_mask((200, 200, 3), corners)
+    expanded = tracking.build_court_mask(
+        (200, 200, 3),
+        corners,
+        margin_ratio=0.025,
+    )
+
+    assert strict[26, 100] == 0
+    assert expanded[26, 100] == 255
+
+
+@pytest.mark.parametrize("margin_ratio", [-0.01, 1.01, float("nan")])
+def test_court_mask_rejects_invalid_margin(margin_ratio: float) -> None:
+    corners = np.asarray([[20, 30], [180, 30], [190, 180], [10, 180]], dtype=np.float32)
+
+    with pytest.raises(ValueError, match="margin_ratio"):
+        tracking.build_court_mask((200, 200, 3), corners, margin_ratio=margin_ratio)

@@ -4,7 +4,7 @@ import pytest
 
 from badminton_data_process.main_view.analyze import contiguous_segments
 from badminton_data_process.core.schemas import MainViewLabel, parse_main_view_label
-from badminton_data_process.main_view.scoring import FrameScore, geometry_score
+from badminton_data_process.main_view.scoring import FrameScore, geometry_score, reject_reason
 from badminton_data_process.review.main_view import choose_reject_reason, projection_quality
 
 np = pytest.importorskip("numpy")
@@ -35,6 +35,13 @@ def _score(frame: int, is_main: int, score: float = 0.8) -> FrameScore:
 def test_geometry_score_accepts_reasonable_court_trapezoid() -> None:
     corners = np.array([[220, 120], [1060, 120], [1220, 700], [80, 700]], dtype=np.float32)
     assert geometry_score(corners, (720, 1280, 3)) > 0.65
+
+
+def test_low_angle_profile_can_relax_reject_gate_without_lowering_global_default() -> None:
+    args = (0.30, 0.31, 0.68, 0.58, 0.34, 0.28)
+
+    assert reject_reason(*args) == "low_court_geometry_score"
+    assert reject_reason(*args, max_reject_score=0.65) == ""
 
 
 def test_contiguous_segments_merges_small_gaps_and_filters_short_segments() -> None:

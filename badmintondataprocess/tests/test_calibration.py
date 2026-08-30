@@ -12,8 +12,11 @@ from badminton_data_process.calibration.reference import (
     bright_line_mask,
     score_court_line_support,
 )
-from badminton_data_process.calibration.court import _frame_candidates
-from badminton_data_process.calibration.hough import generate_hough_candidates
+from badminton_data_process.calibration.court import _frame_candidates, _write_png, normalized_corners
+from badminton_data_process.calibration.hough import (
+    generate_hough_candidates,
+    generate_low_angle_hough_candidates,
+)
 from badminton_data_process.calibration.validation import (
     CalibrationCandidate,
     CalibrationCandidateSource,
@@ -87,6 +90,34 @@ def test_validation_rejects_wrong_order_and_accepts_supported_court() -> None:
     assert "corners_not_convex" in wrong_order.reasons or "corners_wrong_order" in wrong_order.reasons
 
 
+def test_manual_calibration_can_explicitly_allow_one_off_frame_corner() -> None:
+    corners = np.asarray([[100, 80], [460, 80], [700, 430], [70, 430]], dtype=np.float32)
+    frame = _court_frame(corners)
+    candidate = CalibrationCandidate(corners, CalibrationCandidateSource.MANUAL, 10)
+
+    strict = validate_calibration_candidate(
+        frame,
+        candidate,
+        thresholds=CalibrationThresholds(min_line_support=0.0),
+    )
+    side_view = validate_calibration_candidate(
+        frame,
+        candidate,
+        thresholds=CalibrationThresholds(
+            min_line_support=0.0,
+            max_out_of_bounds_ratio=0.25,
+        ),
+    )
+
+    assert "corners_out_of_bounds" in strict.reasons
+    assert side_view.accepted
+    normalized = corners / np.asarray([640.0, 480.0], dtype=np.float32)
+    with pytest.raises(ValueError, match="normalized from 0 to 1"):
+        normalized_corners(frame.shape, normalized)
+    restored = normalized_corners(frame.shape, normalized, allow_out_of_bounds=True)
+    assert np.allclose(restored, corners)
+
+
 def test_stable_selection_rejects_single_outlier() -> None:
     base = np.asarray([[180, 80], [460, 80], [570, 430], [70, 430]], dtype=np.float32)
     frame = _court_frame(base)
@@ -114,6 +145,26 @@ def test_stable_selection_rejects_single_outlier() -> None:
     assert normalized_corner_rmse(base, base + np.asarray([2.0, 0.0]), frame.shape) < 0.01
 
 
+def test_stable_selection_does_not_bypass_minimum_for_one_auto_candidate() -> None:
+    corners = np.asarray([[180, 80], [460, 80], [570, 430], [70, 430]], dtype=np.float32)
+    frame = _court_frame(corners)
+    result = validate_calibration_candidate(
+        frame,
+        CalibrationCandidate(corners, CalibrationCandidateSource.HOUGH_LINES, 7),
+        thresholds=CalibrationThresholds(min_line_support=0.5),
+    )
+
+    selected, stable_frames = select_stable_calibration(
+        [result],
+        frame.shape,
+        max_corner_rmse_ratio=0.02,
+        min_stable_candidates=2,
+    )
+
+    assert selected is None
+    assert stable_frames == [7]
+
+
 def test_hough_adapter_generates_candidates_without_validating_them() -> None:
     corners = np.asarray([[180, 80], [460, 80], [570, 430], [70, 430]], dtype=np.float32)
     frame = _court_frame(corners)
@@ -121,8 +172,27 @@ def test_hough_adapter_generates_candidates_without_validating_them() -> None:
     candidates = generate_hough_candidates(frame, frame_index=7)
 
     assert candidates
+    assert normalized_corner_rmse(candidates[0].corners, corners, frame.shape) < 0.05
     assert all(candidate.source is CalibrationCandidateSource.HOUGH_LINES for candidate in candidates)
     assert all(candidate.frame_index == 7 for candidate in candidates)
+
+
+def test_low_angle_hough_can_represent_one_off_frame_corner() -> None:
+    width, height = 640, 360
+    corners = np.asarray(
+        [[47, 291], [321, 274], [940, 284], [240, 351]],
+        dtype=np.float32,
+    )
+    frame = _court_frame(corners, size=(width, height))
+
+    candidates = generate_low_angle_hough_candidates(frame, frame_index=11)
+
+    assert candidates
+    assert any(
+        normalized_corner_rmse(candidate.corners, corners, frame.shape) < 0.08
+        for candidate in candidates
+    )
+    assert all(candidate.diagnostics["adapter"] == "low_angle_hough" for candidate in candidates)
 
 
 def test_white_line_mask_excludes_bright_low_saturation_court_surface() -> None:
@@ -135,6 +205,17 @@ def test_white_line_mask_excludes_bright_low_saturation_court_surface() -> None:
 
     assert mask[150, 180] == 0  # court surface is evidence/ROI, not a white line
     assert mask[70, 180] == 255
+
+
+def test_calibration_preview_writer_supports_unicode_windows_paths(tmp_path) -> None:
+    output = tmp_path / "场地标定预览.png"
+    image = np.full((24, 32, 3), 127, dtype=np.uint8)
+
+    _write_png(output, image)
+
+    decoded = cv2.imdecode(np.fromfile(output, dtype=np.uint8), cv2.IMREAD_COLOR)
+    assert decoded is not None
+    assert decoded.shape == image.shape
 
 
 def test_hybrid_calibration_never_promotes_green_edge_to_court_boundary() -> None:

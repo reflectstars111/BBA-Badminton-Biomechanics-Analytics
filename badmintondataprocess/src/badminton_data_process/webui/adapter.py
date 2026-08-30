@@ -8,6 +8,7 @@ from badminton_data_process.core.io import read_json
 from badminton_data_process.core.paths import RunLayout
 from badminton_data_process.pipeline.full import run_full_analysis
 from badminton_data_process.pipeline.run import run_pipeline
+from badminton_data_process.webui.court_annotation import MANUAL_MAX_OUT_OF_BOUNDS_RATIO
 from badminton_data_process.webui.reporting import build_web_report
 
 
@@ -71,14 +72,13 @@ def submit_web_analysis(
     if request.manual_reference_points is not None:
         if len(request.manual_reference_points) != 8:
             raise ValueError("manual court reference must contain four normalized x,y pairs")
-        out_of_bounds = any(
-            value < 0.0 or value > 1.0
-            for value in request.manual_reference_points
-        )
         overrides = {
             "court_calibration": {
                 "reference_points": request.manual_reference_points,
-                "max_out_of_bounds_ratio": 0.25 if out_of_bounds else 0.0,
+                # The user already reviewed this standard-court model in the
+                # WebUI. Preserve off-frame corners in the pipeline; the
+                # downstream geometric and line-support gates still apply.
+                "max_out_of_bounds_ratio": MANUAL_MAX_OUT_OF_BOUNDS_RATIO,
             }
         }
     run_dir, summary = run_full_analysis(

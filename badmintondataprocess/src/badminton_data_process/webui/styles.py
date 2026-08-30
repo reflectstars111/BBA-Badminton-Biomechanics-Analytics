@@ -335,6 +335,40 @@ body {
 .results-video video {max-height: 700px; border-radius: 4px !important; background: #0c0e0e !important;}
 .report-summary {padding: 18px 4px;}
 .dataframe {border-radius: 4px !important; overflow: hidden;}
+.report-table {
+    --gr-df-table-bg-even: #ffffff;
+    --gr-df-table-bg-odd: #f5f6f3;
+    --gr-df-table-text: #1b211f;
+    --gr-df-table-border: #d4d7d1;
+    --gr-df-input-background-fill: #ffffff;
+    --table-even-background-fill: #ffffff;
+    --table-odd-background-fill: #f5f6f3;
+    --table-even-background-fill-dark: #ffffff;
+    --table-odd-background-fill-dark: #f5f6f3;
+    --background-fill-primary: #ffffff;
+    --background-fill-secondary: #f5f6f3;
+    --body-text-color: #1b211f;
+    --body-text-color-dark: #1b211f;
+    --block-background-fill: #ffffff;
+    --input-background-fill: #ffffff;
+    background: #ffffff !important;
+    color: #1b211f !important;
+}
+.report-table :is(.table-container, .table-wrap, table) {
+    background: #ffffff !important;
+    color: #1b211f !important;
+}
+.report-table :is(thead, thead tr, thead th) {
+    background: #eceeea !important;
+    color: #17201c !important;
+}
+.report-table tbody tr:nth-child(odd),
+.report-table tbody tr:nth-child(odd) td {background: #f5f6f3 !important;}
+.report-table tbody tr:nth-child(even),
+.report-table tbody tr:nth-child(even) td {background: #ffffff !important;}
+.report-table :is(th, td, .cell-wrap, .header-content, span, input, textarea) {
+    color: #1b211f !important;
+}
 button.primary {border-color: var(--bba-orange) !important; background: var(--bba-orange) !important;}
 button.primary:hover {background: var(--bba-orange-dark) !important;}
 
@@ -428,6 +462,11 @@ body {background: #ffffff !important;}
     color: #ffffff !important;
 }
 .stage-log > .label-wrap svg {color: #ffffff !important; stroke: #ffffff !important;}
+.stage-log .md :not(pre) > code {
+    border: 1px solid #cbd0cc !important;
+    background: #eef0ed !important;
+    color: #17201c !important;
+}
 footer {display: none !important;}
 @media (max-width: 820px) {
     .gradio-container {padding: 12px 12px 48px !important;}

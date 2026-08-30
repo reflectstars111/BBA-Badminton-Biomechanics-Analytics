@@ -6,6 +6,7 @@ import pytest
 
 from badminton_data_process.core.io import write_csv_rows, write_json
 from badminton_data_process.webui.app import (
+    build_app,
     duration_label,
     estimate_remaining_seconds,
     pipeline_progress,
@@ -16,6 +17,35 @@ from badminton_data_process.webui.app import (
     shuttle_rally_table,
 )
 from badminton_data_process.webui.reporting import build_web_report
+from badminton_data_process.webui.styles import WEBUI_CSS
+
+
+def test_report_tables_and_stage_codes_pin_a_light_high_contrast_palette() -> None:
+    """Dark browser preferences must not leak into the white report surface."""
+    expected_rules = (
+        ".report-table {",
+        "--table-even-background-fill: #ffffff;",
+        "--table-odd-background-fill: #f5f6f3;",
+        "--body-text-color: #1b211f;",
+        ".stage-log .md :not(pre) > code {",
+        "background: #eef0ed !important;",
+        "color: #17201c !important;",
+    )
+
+    for rule in expected_rules:
+        assert rule in WEBUI_CSS
+
+    config = build_app().get_config_file()
+    report_tables = [
+        component
+        for component in config["components"]
+        if component["type"] == "dataframe"
+    ]
+    assert len(report_tables) == 3
+    assert all(
+        component["props"].get("elem_classes") == ["report-table"]
+        for component in report_tables
+    )
 
 
 def _player_row(player_id: str, frame: int, timestamp: float, court_y: float) -> dict[str, object]:

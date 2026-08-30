@@ -184,6 +184,25 @@ def test_confirmed_model_allows_one_off_frame_corner_for_overhead_mode() -> None
     assert "手动标定已锁定" in status
 
 
+def test_confirmed_model_allows_two_off_frame_corners_for_low_angle_mode() -> None:
+    corners = np.asarray(
+        [[100, 100], [540, 100], [700, 430], [-60, 430]],
+        dtype=np.float32,
+    )
+    base_rgb = _court_rgb(corners, width=640, height=480)
+    normalized = (corners / np.asarray([640, 480], dtype=np.float32)).reshape(-1).tolist()
+
+    _preview, confirmed, status = apply_manual_annotation(
+        base_rgb,
+        format_reference_points(normalized),
+        "low",
+    )
+
+    assert confirmed[4] > 1.0
+    assert confirmed[6] < 0.0
+    assert "手动标定已锁定" in status
+
+
 def test_eight_model_line_clicks_generate_valid_corner_text() -> None:
     corners = np.asarray([[180, 80], [460, 80], [570, 430], [70, 430]], dtype=np.float32)
     base_rgb = _court_rgb(corners)

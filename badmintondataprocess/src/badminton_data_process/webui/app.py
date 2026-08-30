@@ -635,6 +635,7 @@ def build_app():
                     interactive=False,
                     wrap=True,
                     label="球员全场指标",
+                    elem_classes=["report-table"],
                 )
             with gr.Tab("逐回合数据"):
                 rally_players = gr.Dataframe(
@@ -643,6 +644,7 @@ def build_app():
                     interactive=False,
                     wrap=True,
                     label="球员逐回合指标",
+                    elem_classes=["report-table"],
                 )
                 rally_shuttle = gr.Dataframe(
                     headers=SHUTTLE_COLUMNS,
@@ -650,6 +652,7 @@ def build_app():
                     interactive=False,
                     wrap=True,
                     label="羽毛球逐回合指标",
+                    elem_classes=["report-table"],
                 )
             with gr.Tab("可视化与文件"):
                 gallery = gr.Gallery(label="轨迹、散点与热力图", columns=2, height="auto")

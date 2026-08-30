@@ -1,124 +1,121 @@
 # BBA · Badminton Biomechanics Analytics
 
-> 羽毛球生物力学与比赛视频智能分析系统
+**把一段普通比赛视频，转化为可观看、可量化、可复核的羽毛球运动表现报告。**
 
 [中文](README.md) · [English](README_EN.md)
 
-BBA 将一段羽毛球比赛视频处理为可复核的分析视频、球员姿态与场地坐标、羽毛球轨迹、逐回合统计、热力图和结构化数据。系统支持包含采访、回放、特写与切镜头的未清洗转播，也支持用户已经裁切好的比赛片段。
+BBA（Badminton Biomechanics Analytics）是一套面向羽毛球训练、科研与比赛复盘的本地视频分析系统。上传完整转播或已经裁切好的比赛片段，选择俯视角或低视角，确认一次球场标定，系统即可自动完成有效回合清洗、双端球员骨骼追踪、羽毛球轨迹分析、标准球场映射和数据报告生成。
 
-项目当前重点不是堆叠演示效果，而是建立一条统一、可恢复、带质量门控的研究管线：CLI、批处理和 WebUI 消费同一套 Pipeline Interface；失败、拒绝、无数据与成功具有明确语义；所有正式结果都保留在可审计的 Run Manifest 中。
+无需把视频交给云端。分析、模型与结果默认都保留在你的计算机上，并可通过一个浏览器界面完成。
 
-## 当前能力
+![BBA 俯视角双端骨骼、羽毛球轨迹与标准球场映射](assets/readme/analysis-overhead-china2018.png)
 
-| 能力 | 当前状态 | 说明 |
-| --- | --- | --- |
-| 未清洗转播自动清洗 | 已实现 | Main View 检测与 Usable Rally 切分，过滤采访、回放、特写、计分牌和明显切镜头 |
-| 已裁切片段分析 | 已实现 | 可跳过素材清洗判断，将整段作为比赛素材进入后续流程 |
-| 俯视 / 标准转播视角 | 已实现 | 当前主要验证范围 |
-| 低视角 / 侧面固定机位 | 实验性 | 使用单独配置；严重透视和遮挡时建议手动确认场地 |
-| 自动球场标定 | 已实现 | 基于白色规则线、几何关系、重投影、凸性和稳定性验证 |
-| 标准球场模型手动修正 | 已实现 | 标注两条纵线和两条横线，可由 6.10 m × 13.40 m 模型推导画外角点 |
-| 双端球员检测与骨骼 | 已实现 / 实验性 | RTMPose CUDA；near/far 是场地角色，不等于稳定运动员身份 |
-| 球员米制场地定位 | 已实现 | 使用脚踝 / 地面接触锚点投影；躯干中心仅用于姿态与展示 |
-| 羽毛球轨迹 | 已实现 | TrackNet 多帧检测，保留 observed / interpolated / missing 语义并限制大跨度插值 |
-| 运动数据与图表 | 已实现 | 移动距离、速度、覆盖率、重心相对高度、站位区域、轨迹、散点和热力图 |
-| 骨骼动作细节分析 | 开发中 | 计划加入击球动作分类、挥拍阶段、关节角度、稳定性和步法分析 |
+> 上图为 BBA 实际分析成片。橙色与蓝色分别表示球网两侧的 near / far 场地角色，绿色表示羽毛球轨迹，右侧小场地显示球员在标准球场中的位置。
 
-当前自动化测试：**147 项**。生产配置支持 NVIDIA CUDA、RTMPose 和 TrackNet GPU 推理，并输出浏览器兼容的 H.264 分析视频。
+## 现在已经可以做到什么
 
-## 一键启动 BBA WebUI
+- **完整转播自动清洗**：从包含采访、回放、特写和切镜头的长视频中提取可用比赛回合。
+- **双端球员与骨骼追踪**：使用 GPU 加速的 RTMPose，同时分析近端和远端球员的姿态与地面位置。
+- **TrackNet 羽毛球追踪**：保留真实观测、短缺口插值和缺失状态，拒绝跨越大距离的错误插值。
+- **真实球场坐标**：将球员落脚点投影到 6.10 m × 13.40 m 标准双打球场，生成移动轨迹、散点图与热力图。
+- **俯视角与低视角**：覆盖常见标准转播视角，并提供针对低机位、强透视画面的实验配置。
+- **一份可交付的结果集**：输出 H.264 分析视频、逐回合与全场指标、CSV、JSON、图表和可恢复的运行清单。
 
-### Windows CMD
+## 效果展示
 
-在 CMD 中进入仓库目录后运行：
+### 俯视 / 标准转播视角
+
+在常见转播机位下，BBA 可以同时呈现双端骨骼、球员框、羽毛球轨迹、完整球场边界和标准球场位置。
+
+![2011 世界羽联总决赛俯视角分析](assets/readme/analysis-overhead-bwf2011.png)
+
+### 低视角 / 侧面固定机位
+
+低视角下，远端人物更小、遮挡更强，部分球场角点还会位于画面之外。BBA 使用独立的低视角配置与标准球场模型，仍可保留双端骨骼、球路和场地投影；自动结果不可靠时可由用户手动修正。
+
+![BBA 低视角分析与结果界面](assets/readme/analysis-low-angle-lindan2026.png)
+
+## 从上传视频到查看报告
+
+1. **上传素材**：选择未裁切的完整转播，或已经裁切好的比赛片段。
+2. **选择机位**：选择俯视 / 标准转播视角，或低视角 / 侧面固定机位。
+3. **核对球场**：接受自动标定，或在代表帧上用标准球场模型手动修正。
+4. **启动分析**：界面显示真实阶段、帧级进度、已运行时间和基于实际吞吐量计算的预计剩余时间。
+5. **查看结果**：播放带骨骼和轨迹的分析视频，浏览全场与逐回合指标，并下载图表和原始数据。
+
+<table>
+  <tr>
+    <td width="50%"><img src="assets/readme/webui-home.png" alt="BBA WebUI 首页与分析流程"></td>
+    <td width="50%"><img src="assets/readme/webui-analysis-progress.png" alt="BBA WebUI 真实分析进度"></td>
+  </tr>
+  <tr>
+    <td align="center">清晰的四步工作流</td>
+    <td align="center">真实阶段、帧进度与动态 ETA</td>
+  </tr>
+</table>
+
+## 一键启动 WebUI
+
+### Windows
+
+安装 [Conda / Miniconda](https://docs.conda.io/projects/miniconda/en/latest/) 后，在克隆仓库的根目录打开 CMD，运行：
 
 ```cmd
-cd /d F:\Good-Badminton
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File F:\Good-Badminton\start_webui.ps1
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\start_webui.ps1
 ```
 
-如果仓库不在 `F:\Good-Badminton`，请替换为实际绝对路径。启动完成后访问：
+也可以双击 `start_webui.bat`。启动完成后访问：
 
 ```text
 http://127.0.0.1:7860
 ```
 
-启动脚本会查找或首次创建 `good-badminton` Conda 环境，安装缺少的 WebUI / RTMPose 依赖，然后启动本地浏览器工作区。首次创建环境需要下载 CUDA 与模型运行依赖，耗时会明显长于后续启动。视频与分析结果默认只保留在当前计算机。
+首次启动会自动创建 `good-badminton` Conda 环境并安装 WebUI、CUDA、RTMPose 等依赖，因此会明显慢于后续启动。正式分析的耗时取决于视频长度、分辨率、帧率、显卡和可用回合数量。
 
-### WebUI 工作流
+## 得到的不只是一段标注视频
 
-1. 上传比赛视频；
-2. 选择“未裁切 / 已裁切”和“俯视 / 低视角”；
-3. 检查系统挑选的代表帧与自动球场标定；
-4. 接受自动结果，或使用标准球场模型线进行手动修正；
-5. 启动完整分析；
-6. 查看实时阶段、帧级进度、预计剩余时间和运行日志；
-7. 下载分析视频、图表、JSON、CSV 与 Run Manifest。
+| 输出 | 可以回答的问题 |
+| --- | --- |
+| 双端骨骼与球路分析视频 | 球员在什么时候移动、起跳、降低重心，球经过了哪里？ |
+| 全场与逐回合球员指标 | 移动距离、平均 / 最高速度、追踪覆盖率、骨骼有效率分别是多少？ |
+| 重心与站位分布 | 平均重心相对高度如何？前场、中场、后场的占比是多少？ |
+| 标准球场轨迹、散点图与热力图 | 球员最常出现在哪些区域？不同回合的移动模式有何差异？ |
+| 羽毛球观测与图像平面速度 | 哪些帧真正观测到球？轨迹是否连续？图像中的速度变化如何？ |
+| CSV、JSON 与 Run Manifest | 如何复核结果、继续研究、制作自己的统计或恢复中断任务？ |
 
-WebUI 的预计用时不是固定倒计时。球员跟踪和 TrackNet 会实时上报“已处理帧 / 总帧数”；系统只有获得当前阶段真实吞吐后才计算 ETA。无法获得可靠阶段内进度时会显示“正在测量当前阶段”，不会输出没有依据的数字。
+骨骼动作细节分析——包括击球动作分类、挥拍阶段、关节角度、稳定性和步法评价——已经预留在报告中，当前统一标记为 **开发中**。
 
-分析报告按比赛概览、球员全局统计、球员逐回合统计、羽毛球逐回合统计和质量诊断组织。界面会明确显示数据覆盖率、标定资格与能力边界；尚未具备可靠依据的骨骼动作细节分析统一标记为“开发中”。
+## 为什么 BBA 适合作为研究与训练工具
 
-## 场地标定
+- **先验证，再计算**：只有通过质量检查的球场标定才能产生正式米制指标。
+- **自动化但允许人工接管**：手动标定使用标准球场模型，角点可以自然延伸到视频画面之外。
+- **结果可追溯**：每个阶段都记录输入、状态、质量摘要与产物，失败、无数据和成功不会混为一谈。
+- **可恢复运行**：长视频中断后可继续处理；输入或配置发生变化时会拒绝混用旧结果。
+- **本地 GPU 工作流**：生产配置支持 NVIDIA CUDA、RTMPose 与 TrackNet GPU 推理。
 
-正式米制指标依赖 **Validated Calibration**。系统不会仅因为算法返回了四个点就认定标定成功。
+## 当前能力边界
 
-自动标定会综合检查：
+BBA 已能完整演示从原始视频到分析报告的流程，但仍是持续发展的研究项目：
 
-- 主要白色场地边线及其线段支持率；
-- 四边形面积、顺序、凸性和画面边界关系；
-- 标准球场模型重投影误差与 Homography 条件数；
-- 多个代表时间点之间的角点稳定性；
-- 低视角下的透视与可见边线约束。
+- 俯视 / 标准转播视角是当前主要验证范围；低视角、严重遮挡和频繁换机位仍属于实验场景。
+- `near` / `far` 表示球网两侧的场地角色，不等同于跨回合保持不变的运动员身份。
+- 单目视频与地面 Homography 无法可靠恢复空中羽毛球的三维米制速度或正式落点；当前正式报告以图像平面速度和可见性为主。
+- 击球归属、动作质量评分和完整战术结论仍需更大规模的真实标注集验证。
 
-自动结果不正确时，可在 WebUI 中选择实际可见的两条纵线和两条横线，并在每条线上点击两个相距较远的点。系统拟合无限直线、求交点，并通过标准双打球场模型推导完整外框，因此手动角点允许位于视频边界以外。
+我们宁愿明确显示“数据不足”或“开发中”，也不会用看似精确的数字掩盖证据不足。
 
-一次确认只适用于同一固定机位。如果视频中实际比赛画面也频繁更换机位，应拆分素材或分别确认，不能复用单个 Homography。
+## 基于开源成果继续前进
 
-## 完整分析管线
+BBA **并非从零开始**。本项目基于 [yo-WASSUP/Good-Badminton](https://github.com/yo-WASSUP/Good-Badminton) 继续开发，感谢上游作者 yo-WASSUP 与贡献者在球员姿态、羽毛球检测和球场映射方向提供的项目基础与探索。
 
-```text
-Source Match
-  -> Main View 清洗
-  -> Usable Rally 切分
-  -> Validated Calibration
-  -> RTMPose 球员检测 / 骨骼 / 地面接触点
-  -> TrackNet 羽毛球轨迹
-  -> 受约束的轨迹平滑与异常插值过滤
-  -> 热力图、散点图与轨迹图
-  -> 资格门控的统计 / 战术诊断
-  -> H.264 分析视频与结构化报告
-```
+在此基础上，BBA 进一步建设了统一且可恢复的 `badmintondataprocess/` 研究管线、完整转播清洗、质量门控、Run Manifest、批处理、标准球场手动校准、俯视 / 低视角配置以及面向普通用户的一键 WebUI。根目录旧版演示入口只保留用于兼容，不再承载新的算法开发。
 
-九个阶段均写入 Run Manifest。WebUI 进度条读取真实阶段结果，球员和羽毛球跟踪阶段进一步使用帧级进度；同一 `run-id` 可以安全恢复，输入或配置变化时会拒绝混用旧产物。
+同时感谢 RTMPose / RTMO / OpenMMLab、[rtmlib](https://github.com/Tau-J/rtmlib)、[Ultralytics](https://github.com/ultralytics/ultralytics) 与 [TrackNet](https://github.com/yastrebksv/TrackNet) 提供的算法和工程基础。
 
-## 分析结果
+<details>
+<summary><strong>面向开发者：环境、CLI 与运行产物</strong></summary>
 
-### 球员指标
-
-- near / far 场地角色；
-- 有效帧、跟踪覆盖率和骨骼有效率；
-- 全场及逐回合移动距离；
-- 当前、平均和稳健最高移动速度；
-- 平均重心相对高度；
-- 前场、中场、后场站位占比；
-- 米制球场轨迹、散点图和热力图。
-
-球员地面位置优先使用双脚踝中点，单脚有效时降级为单脚，姿态不可用时才退回检测框底部。锚点来源、置信度和有效性会写入轨迹数据。
-
-### 羽毛球指标
-
-- 有效观测帧与可见率；
-- observed / interpolated / missing 状态；
-- 当前、平均和稳健最高图像速度；
-- 屏幕对角线归一化速度；
-- 逐回合轨迹和调试视频。
-
-羽毛球在空中运动，单目视频不能仅通过地面 Homography 恢复可信三维米制球速或正式落点。因此 BBA 当前明确报告图像平面速度；击球、落点和完整战术结论仍属于实验研究范围，不以伪精确数值冒充正式结果。
-
-## 命令行使用
-
-### 环境安装
+### 手动安装
 
 ```powershell
 conda env create -f badmintondataprocess/environment.yml
@@ -128,82 +125,30 @@ python -m pip install rtmlib==0.0.16 --no-deps
 bdp verify
 ```
 
-`rtmlib` 使用 `--no-deps` 安装，避免把现有 `onnxruntime-gpu` 替换成 CPU 版本。
-
-### 一键分析未清洗转播
+### 一条命令分析完整转播
 
 ```powershell
 bdp analyze F:\material\match.mp4 --run-id match_full_analysis
 ```
 
-首次在新机器或新素材上运行前，可执行只读预检：
-
-```powershell
-bdp analyze F:\material\match.mp4 --preflight-only
-```
-
-### 统一 CLI
+### 主要命令
 
 ```text
 bdp analyze <video>             # 一键完整分析
 bdp pipeline run / batch        # 分阶段 / 批量运行
-bdp rally segment               # 回合切分
 bdp calibrate                   # 球场标定
-bdp track players / shuttle     # 球员 / 羽毛球跟踪
-bdp smooth                      # 轨迹平滑
-bdp tactics analyze             # 战术诊断
-bdp render demo                 # 分析视频重渲染
-bdp compare trackers            # 跟踪器对照
-bdp webui                       # BBA 浏览器界面
+bdp track players / shuttle     # 球员 / 羽毛球追踪
+bdp render demo                 # 重渲染分析视频
+bdp webui                       # 启动浏览器界面
 bdp verify                      # 环境自检
 ```
 
-## 运行产物
+每次运行的核心产物位于 `badmintondataprocess/runs/<run-id>/`，包括 `manifest.json`、`analysis_summary.json`、CSV 轨迹、图表和 `outputs/demo/badminton_full_analysis.mp4`。
 
-```text
-runs/<run-id>/manifest.json
-runs/<run-id>/analysis_summary.json
-runs/<run-id>/webui_report.json
-runs/<run-id>/rallies/
-runs/<run-id>/annotations/court_calibration/
-runs/<run-id>/annotations/player_tracks*.csv
-runs/<run-id>/annotations/shuttle_tracks*.csv
-runs/<run-id>/outputs/tracking_charts/
-runs/<run-id>/outputs/demo/badminton_full_analysis.mp4
-```
+当前自动化测试套件包含 **149 项测试**。
 
-## 目录结构
+</details>
 
-```text
-badmintondataprocess/
-├── src/badminton_data_process/
-│   ├── core / pipeline / main_view / rally
-│   ├── calibration / tracking / smoothing / tactics
-│   ├── visualization / media / review
-│   └── webui
-├── configs/                    # default / production / experiments / webui
-├── scripts/                    # PowerShell 与兼容入口
-├── tests/                      # 147 项自动化测试
-├── docs/                       # 架构与迁移计划
-└── runs/                       # 每次运行的独立产物目录
-```
+## License
 
-## 能力边界
-
-- 低视角、双端身份保持、击球归属、落点与完整战术结论仍是实验能力；
-- near / far 只表示球网两侧的场地角色，不等于跨回合稳定运动员身份；
-- Diagnostic Demo 用于展示与排错，不是精度证明；
-- 没有通过标定质量门控的数据不能产生正式米制指标；
-- 冻结真实标注集仍在建设中，precision、recall、ID switch 等基准尚未完整发布。
-
-## 与上游的关系
-
-本项目基于 [yo-WASSUP/Good-Badminton](https://github.com/yo-WASSUP/Good-Badminton) 继续开发（上游作者 yo-WASSUP，Apache License 2.0）。
-
-- 保留并迁移 RTMPose / RTMO / YOLO Pose、羽毛球检测和球场映射相关经验；
-- 新增 `badmintondataprocess/` 统一研究管线、质量门控、Run Manifest、批处理和 BBA WebUI；
-- 根目录旧 `main.py` 演示入口保持冻结，仅用于兼容，不再承担新算法职责。
-
-感谢上游项目及其贡献者，以及 RTMPose / RTMO / OpenMMLab、[rtmlib](https://github.com/Tau-J/rtmlib)、[Ultralytics](https://github.com/ultralytics/ultralytics) 和 [TrackNet](https://github.com/yastrebksv/TrackNet) 提供的算法与工程基础。
-
-本项目沿用上游 Apache License 2.0。
+本项目沿用上游的 [Apache License 2.0](LICENSE)。使用、修改或再发布前，请同时保留许可证与上游归属说明。

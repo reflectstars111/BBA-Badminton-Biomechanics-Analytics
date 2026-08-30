@@ -23,6 +23,7 @@ from badminton_data_process.calibration.reference import STANDARD_COURT
 
 
 CORNER_NAMES = ("TL", "TR", "BR", "BL")
+MANUAL_MAX_OUT_OF_BOUNDS_RATIO = 1.0
 MODEL_LINE_LABELS = {
     "left_doubles_sideline": "左侧双打边线",
     "left_singles_sideline": "左侧单打边线",
@@ -44,7 +45,7 @@ MODEL_LINE_COLORS = (
 
 
 def parse_reference_points_text(value: str) -> list[float]:
-    """Parse normalized ``x,y;...`` corners, including one off-frame point."""
+    """Parse normalized ``x,y;...`` corners, including off-frame points."""
 
     try:
         pairs = [
@@ -74,9 +75,11 @@ def _manual_thresholds(view_kind: str) -> CalibrationThresholds:
     return CalibrationThresholds(
         min_area_ratio=0.08,
         min_line_support=0.45,
-        # A user-confirmed model may legitimately extrapolate one outer corner
-        # beyond the crop in either advertised camera class.
-        max_out_of_bounds_ratio=0.25,
+        # A user-confirmed standard-court model may extrapolate any number of
+        # corners beyond the crop. Ordering, convexity, Homography stability,
+        # bounded coordinates, and visible regulation-line support remain
+        # mandatory, so off-frame geometry is not accepted blindly.
+        max_out_of_bounds_ratio=MANUAL_MAX_OUT_OF_BOUNDS_RATIO,
     )
 
 

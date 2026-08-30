@@ -135,7 +135,7 @@ def test_webui_manual_corners_are_forwarded_as_reviewed_config_override(tmp_path
 
     monkeypatch.setattr(adapter_module, "run_full_analysis", fake_full)
     monkeypatch.setattr(adapter_module, "build_web_report", lambda path: {"run_dir": str(path)})
-    points = [0.1, 0.2, 0.8, 0.2, 1.2, 0.9, 0.0, 0.9]
+    points = [0.1, 0.2, 0.8, 0.2, 1.2, 0.9, -0.2, 0.9]
 
     submit_web_analysis(
         WebAnalysisRequest(
@@ -151,6 +151,6 @@ def test_webui_manual_corners_are_forwarded_as_reviewed_config_override(tmp_path
     assert captured["config_overrides"] == {
         "court_calibration": {
             "reference_points": points,
-            "max_out_of_bounds_ratio": 0.25,
+            "max_out_of_bounds_ratio": 1.0,
         }
     }

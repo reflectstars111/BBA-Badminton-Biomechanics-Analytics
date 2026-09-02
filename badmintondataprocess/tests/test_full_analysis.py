@@ -92,6 +92,11 @@ def test_full_analysis_summary_collects_cleaning_tracking_and_video_outputs(tmp_
         "shuttle_interpolated_rows": 5,
         "shuttle_smoothed_valid_rows": 55,
         "shuttle_gap_filled_rows": 3,
+        "biomechanics_kinematics_rows": 0,
+        "biomechanics_eligible_rows": 0,
+        "biomechanics_rejected_rows": 0,
+        "biomechanics_action_candidates": 0,
+        "biomechanics_eligible_phase_rows": 0,
     }
     assert summary["outputs"]["analysis_video"] == str(demo)
     assert summary["outputs"]["shuttle_smoothing_summary"] == str(

@@ -298,7 +298,8 @@ class RtmposeImplementation:
             from rtmlib import Body
         except ImportError as exc:
             raise RuntimeError(
-                "RTMPose requires optional dependencies: pip install -e '.[pose]'"
+                "RTMPose is missing from the formal runtime. Run setup_runtime.ps1 "
+                "to repair the good-badminton environment."
             ) from exc
         selected_device = _auto_rtmpose_device() if self.device == "auto" else self.device
         if self.backend == "onnxruntime" and selected_device == "cuda":

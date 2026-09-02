@@ -209,6 +209,34 @@ class TacticalAnalysisConfig:
 
 
 @dataclass(slots=True)
+class BiomechanicsAnalysisConfig:
+    enabled: bool = True
+    classification_backend: str = "none"
+    keypoint_confidence: float = 0.35
+    min_keypoint_coverage_ratio: float = 0.35
+    min_contiguous_frames: int = 5
+    event_pre_frames: int = 12
+    event_post_frames: int = 20
+    wrist_speed_threshold_norm_s: float = 1.0
+    shuttle_turn_angle_deg: float = 45.0
+    shuttle_proximity_ratio: float = 0.75
+    min_shuttle_proximity_score: float = 0.35
+    shuttle_turn_span_observations: int = 3
+    min_event_gap_frames: int = 8
+    min_candidate_score: float = 0.60
+    angle_smoothing_window: int = 5
+    bst_repository: str = "../third_party/BST-Badminton-Stroke-type-Transformer"
+    bst_weights: str = ""
+    bst_device: str = "auto"
+    bst_min_confidence: float = 0.45
+    bst_model_name: str = "BST_AP"
+    bst_pose_style: str = "JnB_bone"
+    bst_seq_len: int = 30
+    bst_num_classes: int = 25
+    enable_far_player: bool = True
+
+
+@dataclass(slots=True)
 class DemoRenderingConfig:
     enabled: bool = True
     output_filename: str = "badminton_analysis_demo.mp4"
@@ -232,6 +260,7 @@ class PipelineConfig:
     shuttle_tracking: ShuttleTrackingConfig
     smoothing: SmoothingConfig
     tactical_analysis: TacticalAnalysisConfig
+    biomechanics_analysis: BiomechanicsAnalysisConfig
     demo_rendering: DemoRenderingConfig
 
 
@@ -471,6 +500,90 @@ def _validate(cfg: PipelineConfig, errors: list[str]) -> None:
         )
     _nonnegative(errors, "tactical_analysis.min_event_gap_frames", tactics.min_event_gap_frames)
 
+    biomechanics = cfg.biomechanics_analysis
+    if biomechanics.classification_backend not in {"none", "heuristic", "bst"}:
+        errors.append(
+            "biomechanics_analysis.classification_backend: supported values are "
+            "'none', 'heuristic', and 'bst'"
+        )
+    _ratio(errors, "biomechanics_analysis.keypoint_confidence", biomechanics.keypoint_confidence)
+    _ratio(
+        errors,
+        "biomechanics_analysis.min_keypoint_coverage_ratio",
+        biomechanics.min_keypoint_coverage_ratio,
+        open_lower=True,
+    )
+    _positive(errors, "biomechanics_analysis.min_contiguous_frames", biomechanics.min_contiguous_frames)
+    _nonnegative(errors, "biomechanics_analysis.event_pre_frames", biomechanics.event_pre_frames)
+    _nonnegative(errors, "biomechanics_analysis.event_post_frames", biomechanics.event_post_frames)
+    _positive(
+        errors,
+        "biomechanics_analysis.wrist_speed_threshold_norm_s",
+        biomechanics.wrist_speed_threshold_norm_s,
+    )
+    if not 0 < biomechanics.shuttle_turn_angle_deg <= 180:
+        errors.append(
+            "biomechanics_analysis.shuttle_turn_angle_deg: must be in (0, 180]"
+        )
+    _positive(
+        errors,
+        "biomechanics_analysis.shuttle_proximity_ratio",
+        biomechanics.shuttle_proximity_ratio,
+    )
+    _ratio(
+        errors,
+        "biomechanics_analysis.min_shuttle_proximity_score",
+        biomechanics.min_shuttle_proximity_score,
+        open_lower=True,
+    )
+    _positive(
+        errors,
+        "biomechanics_analysis.shuttle_turn_span_observations",
+        biomechanics.shuttle_turn_span_observations,
+    )
+    _nonnegative(
+        errors,
+        "biomechanics_analysis.min_event_gap_frames",
+        biomechanics.min_event_gap_frames,
+    )
+    _ratio(
+        errors,
+        "biomechanics_analysis.min_candidate_score",
+        biomechanics.min_candidate_score,
+        open_lower=True,
+    )
+    _positive(
+        errors,
+        "biomechanics_analysis.angle_smoothing_window",
+        biomechanics.angle_smoothing_window,
+    )
+    if biomechanics.angle_smoothing_window % 2 == 0:
+        errors.append("biomechanics_analysis.angle_smoothing_window: must be odd")
+    if biomechanics.bst_device not in {"auto", "cpu", "cuda"}:
+        errors.append(
+            "biomechanics_analysis.bst_device: supported values are 'auto', 'cpu', and 'cuda'"
+        )
+    _ratio(
+        errors,
+        "biomechanics_analysis.bst_min_confidence",
+        biomechanics.bst_min_confidence,
+    )
+    if biomechanics.bst_model_name not in {"BST", "BST_CG", "BST_AP", "BST_CG_AP"}:
+        errors.append(
+            "biomechanics_analysis.bst_model_name: unsupported BST architecture"
+        )
+    if biomechanics.bst_pose_style not in {"J_only", "JnB_bone"}:
+        errors.append(
+            "biomechanics_analysis.bst_pose_style: supported values are 'J_only' and 'JnB_bone'"
+        )
+    _positive(errors, "biomechanics_analysis.bst_seq_len", biomechanics.bst_seq_len)
+    if biomechanics.bst_num_classes not in {25, 35}:
+        errors.append("biomechanics_analysis.bst_num_classes: supported values are 25 and 35")
+    if biomechanics.classification_backend == "bst" and not biomechanics.bst_weights.strip():
+        errors.append(
+            "biomechanics_analysis.bst_weights: required when classification_backend='bst'"
+        )
+
     demo = cfg.demo_rendering
     if (
         not demo.output_filename.strip()
@@ -501,6 +614,7 @@ def parse_config(config: dict[str, Any]) -> PipelineConfig:
         ("shuttle_tracking", ShuttleTrackingConfig),
         ("smoothing", SmoothingConfig),
         ("tactical_analysis", TacticalAnalysisConfig),
+        ("biomechanics_analysis", BiomechanicsAnalysisConfig),
         ("demo_rendering", DemoRenderingConfig),
     )
     known_sections = {name for name, _ in sections}

@@ -1,0 +1,29 @@
+# Complete production runtime for the existing good-badminton Conda environment.
+# CUDA PyTorch is installed separately from the official cu128 index.
+# RTMLib is installed separately with --no-deps so it cannot replace
+# onnxruntime-gpu with the CPU-only onnxruntime distribution.
+numpy==2.4.4
+scipy==1.18.0
+pandas==2.3.3
+matplotlib==3.11.1
+opencv-python==5.0.0.93
+ultralytics==8.4.118
+yt-dlp==2026.7.4
+imageio==2.37.4
+imageio-ffmpeg==0.6.0
+PyYAML==6.0.3
+gradio==5.50.0
+onnxruntime-gpu==1.29.0
+tqdm==4.70.0
+scikit-learn==1.8.0
+seaborn==0.13.2
+openpyxl==3.1.5
+moviepy==2.2.1
+transformers==4.57.6
+torcheval==0.0.7
+einops==0.8.2
+parse==1.22.1
+positional-encodings==6.0.4
+torchinfo==1.8.0
+gdown==5.2.2
+pytest==9.1.1

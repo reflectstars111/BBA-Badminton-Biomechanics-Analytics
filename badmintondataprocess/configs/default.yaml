@@ -95,6 +95,32 @@ tactical_analysis:
   turn_angle_deg: 100.0
   min_event_gap_frames: 15
 
+biomechanics_analysis:
+  enabled: true
+  classification_backend: none
+  keypoint_confidence: 0.35
+  min_keypoint_coverage_ratio: 0.35
+  min_contiguous_frames: 5
+  event_pre_frames: 12
+  event_post_frames: 20
+  wrist_speed_threshold_norm_s: 1.0
+  shuttle_turn_angle_deg: 45.0
+  shuttle_proximity_ratio: 0.75
+  min_shuttle_proximity_score: 0.35
+  shuttle_turn_span_observations: 3
+  min_event_gap_frames: 8
+  min_candidate_score: 0.60
+  angle_smoothing_window: 5
+  bst_repository: ../third_party/BST-Badminton-Stroke-type-Transformer
+  bst_weights: ../weights/bst/bst_AP_JnB_bone_train_partial_0p25_merged_2.pt
+  bst_device: auto
+  bst_min_confidence: 0.45
+  bst_model_name: BST_AP
+  bst_pose_style: JnB_bone
+  bst_seq_len: 30
+  bst_num_classes: 25
+  enable_far_player: true
+
 demo_rendering:
   enabled: true
   output_filename: badminton_analysis_demo.mp4

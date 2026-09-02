@@ -35,6 +35,9 @@ weights/*
 *.pth
 *.onnx
 
+# Optional upstream runtimes are installed locally and retain their own licenses
+third_party/
+
 # Generated preprocess probe metadata (absolute-path local data)
 badmintondataprocess/metadata/preprocessed/
 

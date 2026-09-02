@@ -189,6 +189,12 @@ def build_analysis_summary(run_dir: Path) -> dict[str, Any]:
     shuttles = read_csv_rows(run_dir / "annotations" / "shuttle_tracking_summary.csv")
     shuttle_smoothing_path = run_dir / "annotations" / "shuttle_smoothing_summary.csv"
     shuttle_smoothing = read_csv_rows(shuttle_smoothing_path)
+    kinematics_path = run_dir / "outputs" / "biomechanics" / "kinematics_frames.csv"
+    kinematics = read_csv_rows(kinematics_path)
+    action_events_path = run_dir / "outputs" / "biomechanics" / "action_events.csv"
+    action_events = read_csv_rows(action_events_path)
+    swing_phases_path = run_dir / "outputs" / "biomechanics" / "swing_phases.csv"
+    swing_phases = read_csv_rows(swing_phases_path)
     demo_path = run_dir / "outputs" / "demo" / str(demo_name)
     stages = list(manifest.get("stages", []))
     stage_success = bool(stages) and all(stage.get("status") == "success" for stage in stages)
@@ -213,6 +219,17 @@ def build_analysis_summary(run_dir: Path) -> dict[str, Any]:
                 shuttle_smoothing, "smoothed_valid_rows"
             ),
             "shuttle_gap_filled_rows": _sum_int(shuttle_smoothing, "gap_filled_rows"),
+            "biomechanics_kinematics_rows": len(kinematics),
+            "biomechanics_eligible_rows": sum(
+                row.get("kinematics_eligibility") == "eligible" for row in kinematics
+            ),
+            "biomechanics_rejected_rows": sum(
+                row.get("kinematics_eligibility") != "eligible" for row in kinematics
+            ),
+            "biomechanics_action_candidates": len(action_events),
+            "biomechanics_eligible_phase_rows": sum(
+                row.get("phase_eligibility") == "eligible" for row in swing_phases
+            ),
         },
         "stages": [
             {
@@ -234,6 +251,15 @@ def build_analysis_summary(run_dir: Path) -> dict[str, Any]:
             "shuttle_smoothing_summary": str(shuttle_smoothing_path),
             "tracking_charts": str(run_dir / "outputs" / "tracking_charts"),
             "tactical_summary": str(run_dir / "outputs" / "tactics" / "tactics_summary.csv"),
+            "biomechanics_kinematics": str(kinematics_path),
+            "biomechanics_action_events": str(action_events_path),
+            "biomechanics_swing_phases": str(swing_phases_path),
+            "biomechanics_rally_summary": str(
+                run_dir / "outputs" / "biomechanics" / "biomechanics_rally_summary.csv"
+            ),
+            "biomechanics_match_summary": str(
+                run_dir / "outputs" / "biomechanics" / "biomechanics_match_summary.json"
+            ),
             "manifest": str(manifest_path),
         },
     }

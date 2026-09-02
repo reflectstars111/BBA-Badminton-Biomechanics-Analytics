@@ -4,6 +4,12 @@ import argparse
 import sys
 
 from badminton_data_process.calibration.court import main as calibrate_main
+from badminton_data_process.analysis.biomechanics.evaluation import (
+    main as biomechanics_evaluate_main,
+)
+from badminton_data_process.analysis.biomechanics.review import (
+    main as biomechanics_review_main,
+)
 from badminton_data_process.core.verify import main as verify_main
 from badminton_data_process.evaluation.compare import main as compare_trackers_main
 from badminton_data_process.main_view.analyze import main as main_view_analyze_main
@@ -38,7 +44,8 @@ def build_parser() -> argparse.ArgumentParser:
             "Commands: metadata validate/register-local, download, preprocess, rally segment, "
             "main-view analyze/export, review main-view, calibrate, track players, "
             "track shuttle, smooth, visualize, tactics analyze, compare trackers, "
-            "render demo, analyze, pipeline run/batch, webui, verify"
+            "render demo, biomechanics review/evaluate, analyze, pipeline run/batch, "
+            "webui, verify"
         ),
     )
     return parser
@@ -82,6 +89,10 @@ def main(argv: list[str] | None = None) -> int:
         return render_demo_main(argv[2:])
     if argv[:2] == ["compare", "trackers"]:
         return compare_trackers_main(argv[2:])
+    if argv[:2] == ["biomechanics", "review"]:
+        return biomechanics_review_main(argv[2:])
+    if argv[:2] == ["biomechanics", "evaluate"]:
+        return biomechanics_evaluate_main(argv[2:])
     if argv[:2] == ["pipeline", "batch"]:
         return pipeline_batch_main(argv[2:])
     if argv[:2] == ["pipeline", "run"]:

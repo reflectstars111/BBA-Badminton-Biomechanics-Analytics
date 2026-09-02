@@ -70,7 +70,7 @@ powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\start_webui.ps
 http://127.0.0.1:7860
 ```
 
-首次启动会自动创建 `good-badminton` Conda 环境并安装 WebUI、CUDA、RTMPose 等依赖，因此会明显慢于后续启动。正式分析的耗时取决于视频长度、分辨率、帧率、显卡和可用回合数量。
+项目统一使用已有的 `good-badminton` Conda 环境。WebUI 启动前会严格检查完整生产套件；若依赖不完整，会调用 `setup_runtime.ps1` 在这个环境内一次性同步 WebUI、CUDA、RTMPose、BST、统计评估和报告依赖，不会创建第二个环境。脚本还会准备并校验固定版本的 BST 上游源码与官方集成权重，避免换机后静默退回无分类。正式分析的耗时取决于视频长度、分辨率、帧率、显卡和可用回合数量。
 
 ## 得到的不只是一段标注视频
 
@@ -81,9 +81,10 @@ http://127.0.0.1:7860
 | 重心与站位分布 | 平均重心相对高度如何？前场、中场、后场的占比是多少？ |
 | 标准球场轨迹、散点图与热力图 | 球员最常出现在哪些区域？不同回合的移动模式有何差异？ |
 | 羽毛球观测与图像平面速度 | 哪些帧真正观测到球？轨迹是否连续？图像中的速度变化如何？ |
+| 骨骼动作细节分析 | 击球候选、准备 / 加速 / 接触窗 / 随挥 / 恢复阶段、二维关节角、稳定性与步法描述如何？ |
 | CSV、JSON 与 Run Manifest | 如何复核结果、继续研究、制作自己的统计或恢复中断任务？ |
 
-骨骼动作细节分析——包括击球动作分类、挥拍阶段、关节角度、稳定性和步法评价——已经预留在报告中，当前统一标记为 **开发中**。
+骨骼动作细节分析基础版已经接入一键管线与 WebUI。系统使用多证据门槛生成击球候选，缺失或低置信数据会保留拒绝原因；结果页可一键导出带骨骼的三帧复核图、待审核 CSV 和 ZIP 复核包。可选的 BST 击球分类后端需要单独配置作者发布的官方权重，详见 [BST 配置说明](badmintondataprocess/docs/bst_setup.md)。
 
 ## 为什么 BBA 适合作为研究与训练工具
 
@@ -100,7 +101,7 @@ BBA 已能完整演示从原始视频到分析报告的流程，但仍是持续�
 - 俯视 / 标准转播视角是当前主要验证范围；低视角、严重遮挡和频繁换机位仍属于实验场景。
 - `near` / `far` 表示球网两侧的场地角色，不等同于跨回合保持不变的运动员身份。
 - 单目视频与地面 Homography 无法可靠恢复空中羽毛球的三维米制速度或正式落点；当前正式报告以图像平面速度和可见性为主。
-- 击球归属、动作质量评分和完整战术结论仍需更大规模的真实标注集验证。
+- 击球候选与阶段分解仍需冻结人工标注集验证；当前稳定性和步法是二维描述符，不是医学诊断、三维关节测量或绝对动作优劣评分。
 
 我们宁愿明确显示“数据不足”或“开发中”，也不会用看似精确的数字掩盖证据不足。
 
@@ -118,12 +119,11 @@ BBA **并非从零开始**。本项目基于 [yo-WASSUP/Good-Badminton](https://
 ### 手动安装
 
 ```powershell
-conda env create -f badmintondataprocess/environment.yml
-conda activate good-badminton
-python -m pip install -e "badmintondataprocess/.[ui,yaml]"
-python -m pip install rtmlib==0.0.16 --no-deps
-bdp verify
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\setup_runtime.ps1
+conda run -n good-badminton bdp verify --profile production --strict --bst-repository .\third_party\BST-Badminton-Stroke-type-Transformer --bst-weights .\weights\bst\bst_AP_JnB_bone_train_partial_0p25_merged_2.pt
 ```
+
+安装脚本只更新已有的 `good-badminton` 环境。完整直接依赖锁定在 `badmintondataprocess/requirements-runtime.txt`；RTMLib 会在保留 `onnxruntime-gpu` 的前提下单独安装，避免 CPU/GPU ONNX Runtime 混装。
 
 ### 一条命令分析完整转播
 
@@ -140,12 +140,12 @@ bdp calibrate                   # 球场标定
 bdp track players / shuttle     # 球员 / 羽毛球追踪
 bdp render demo                 # 重渲染分析视频
 bdp webui                       # 启动浏览器界面
-bdp verify                      # 环境自检
+bdp verify --profile production --strict  # 完整生产环境自检
 ```
 
 每次运行的核心产物位于 `badmintondataprocess/runs/<run-id>/`，包括 `manifest.json`、`analysis_summary.json`、CSV 轨迹、图表和 `outputs/demo/badminton_full_analysis.mp4`。
 
-当前自动化测试套件包含 **149 项测试**。
+当前自动化测试套件包含 **176 项测试**。
 
 </details>
 

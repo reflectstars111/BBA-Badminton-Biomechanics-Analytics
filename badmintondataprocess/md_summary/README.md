@@ -141,23 +141,14 @@ player_tracking:
 
 ### 姿态与骨骼识别
 
-CPU 环境可直接安装 RTMPose 可选依赖：
-
-```bash
-python -m pip install -e ".[pose]"
-```
-
-RTX 50 系显卡建议使用仓库的 CUDA 12.8 Conda 环境。`rtmlib` 的包元数据会依赖 CPU 版 `onnxruntime`，因此 GPU 环境先由 `environment.yml` 安装 `onnxruntime-gpu`，再无依赖安装 `rtmlib`，避免两个 ONNX Runtime 包互相覆盖：
+项目不维护“最小 CPU 推理环境”。正式管线统一使用已有的 `good-badminton` Conda 环境，并一次性安装 CUDA 12.8、RTMPose、BST、WebUI、评估和报告套件：
 
 ```powershell
-conda env create -f environment.yml
-conda activate good-badminton
-python -m pip install rtmlib==0.0.16 --no-deps
-bdp verify
-python -c "import onnxruntime as ort; print(ort.get_available_providers())"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ..\setup_runtime.ps1
+conda run -n good-badminton bdp verify --profile production --strict --bst-repository ..\third_party\BST-Badminton-Stroke-type-Transformer --bst-weights ..\weights\bst\bst_AP_JnB_bone_train_partial_0p25_merged_2.pt
 ```
 
-最后一条命令必须包含 `CUDAExecutionProvider`。高质量 GPU 验证配置应显式要求 CUDA，环境错误时直接失败，禁止静默回退 CPU：
+`rtmlib` 的包元数据会依赖 CPU 版 `onnxruntime`，正式安装脚本会保留 `onnxruntime-gpu`，再以 `--no-deps` 安装 RTMLib，避免两个 ONNX Runtime 包互相覆盖。严格自检必须确认 `CUDAExecutionProvider`；高质量 GPU 配置要求 CUDA，环境错误时直接失败，禁止静默回退 CPU：
 
 使用 rtmlib 自动缓存的 balanced RTMPose：
 

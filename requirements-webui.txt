@@ -1,1 +1,3 @@
-gradio>=5.0,<6
+# The WebUI is part of the formal production runtime, not a separate minimal stack.
+# setup_runtime.ps1 remains the canonical installer.
+-r requirements.txt

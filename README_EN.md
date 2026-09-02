@@ -70,7 +70,7 @@ You can also double-click `start_webui.bat`. When startup completes, open:
 http://127.0.0.1:7860
 ```
 
-The first launch creates the `good-badminton` Conda environment and installs the WebUI, CUDA, RTMPose, and related dependencies, so it takes noticeably longer than later starts. Analysis time depends on video duration, resolution, frame rate, GPU, and the number of usable rallies.
+BBA uses the existing `good-badminton` Conda environment as its single production runtime. Before launching, the WebUI strictly checks the complete suite. If anything is missing, `setup_runtime.ps1` synchronizes the WebUI, CUDA, RTMPose, BST, evaluation, and reporting dependencies inside that environment; it does not create a second environment. The script also provisions and verifies pinned BST upstream source and an official integration checkpoint, preventing a new machine from silently falling back to unclassified actions. Analysis time depends on video duration, resolution, frame rate, GPU, and the number of usable rallies.
 
 ## More than an annotated video
 
@@ -81,9 +81,10 @@ The first launch creates the `good-badminton` Conda environment and installs the
 | Center-of-mass and court-zone distribution | How low was the player's average posture, and how much time was spent in the front, mid, and back court? |
 | Regulation-court trajectories, scatter plots, and heatmaps | Which areas were occupied most often, and how did movement patterns change across rallies? |
 | Shuttle observations and image-plane speed | Which frames genuinely observed the shuttle, how continuous was the path, and how did image-plane speed change? |
+| Detailed skeleton action analysis | What are the stroke candidates, preparation / acceleration / contact-window / follow-through / recovery phases, 2-D joint angles, stability descriptors, and footwork descriptors? |
 | CSV, JSON, and Run Manifest | How can results be audited, extended, re-plotted, or resumed after interruption? |
 
-Detailed stroke biomechanics—including stroke classification, swing phases, joint angles, stability, and footwork evaluation—already has a place in the report and is currently marked **in development**.
+The first release of detailed skeleton action analysis is now integrated into the one-click pipeline and WebUI. Stroke candidates require multiple evidence gates, while missing or low-confidence data remains explicitly rejected. The results page can export skeleton-overlaid three-frame review montages, a review-ready CSV, and a ZIP review package in one click. The optional BST stroke classifier requires separately configured official weights; see the [BST setup guide](badmintondataprocess/docs/bst_setup.md).
 
 ## Built for research and coaching workflows
 
@@ -100,7 +101,7 @@ BBA demonstrates the complete journey from raw video to analysis report, but it 
 - Overhead / standard broadcast footage is the primary validated range. Low angles, severe occlusion, and frequently changing cameras remain experimental.
 - `near` and `far` are court-side roles, not persistent athlete identities across rallies.
 - A monocular video and ground-plane Homography cannot reliably recover the shuttle's 3D metric speed or an official landing point. Formal reports currently focus on image-plane speed and visibility.
-- Stroke attribution, movement-quality scoring, and complete tactical conclusions still require a larger frozen real-world annotation set.
+- Stroke candidates and phase boundaries still require a frozen human-labelled evaluation set. Stability and footwork outputs are 2-D descriptors, not medical advice, 3-D joint measurements, or absolute technique grades.
 
 When evidence is insufficient, BBA prefers to show “not enough data” or “in development” instead of presenting false precision.
 
@@ -118,12 +119,11 @@ We also thank RTMPose / RTMO / OpenMMLab, [rtmlib](https://github.com/Tau-J/rtml
 ### Manual setup
 
 ```powershell
-conda env create -f badmintondataprocess/environment.yml
-conda activate good-badminton
-python -m pip install -e "badmintondataprocess/.[ui,yaml]"
-python -m pip install rtmlib==0.0.16 --no-deps
-bdp verify
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\setup_runtime.ps1
+conda run -n good-badminton bdp verify --profile production --strict --bst-repository .\third_party\BST-Badminton-Stroke-type-Transformer --bst-weights .\weights\bst\bst_AP_JnB_bone_train_partial_0p25_merged_2.pt
 ```
+
+The setup script only updates the existing `good-badminton` environment. Complete direct dependencies are pinned in `badmintondataprocess/requirements-runtime.txt`. RTMLib is installed separately while preserving `onnxruntime-gpu`, preventing CPU and GPU ONNX Runtime distributions from being mixed.
 
 ### Analyze a full broadcast with one command
 
@@ -140,12 +140,12 @@ bdp calibrate                   # court calibration
 bdp track players / shuttle     # player / shuttle tracking
 bdp render demo                 # re-render the analysis video
 bdp webui                       # start the browser workspace
-bdp verify                      # verify the environment
+bdp verify --profile production --strict  # verify the complete production runtime
 ```
 
 Core artifacts for each run live in `badmintondataprocess/runs/<run-id>/`, including `manifest.json`, `analysis_summary.json`, trajectory CSV files, charts, and `outputs/demo/badminton_full_analysis.mp4`.
 
-The current automated suite contains **149 tests**.
+The current automated suite contains **176 tests**.
 
 </details>
 

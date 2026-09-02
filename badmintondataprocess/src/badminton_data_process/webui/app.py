@@ -3,10 +3,12 @@ from __future__ import annotations
 import argparse
 import threading
 import time
+import zipfile
 from pathlib import Path
 from typing import Any, Iterator
 
 from badminton_data_process.core.paths import discover_project_root
+from badminton_data_process.analysis.biomechanics.review import export_action_event_review
 from badminton_data_process.core.run import make_run_id
 from badminton_data_process.core.schemas import STAGE_ORDER
 from badminton_data_process.webui.adapter import (
@@ -43,6 +45,7 @@ STAGE_LABELS = {
     "trajectory_smoothing": "轨迹平滑与异常插值过滤",
     "visualization": "热力图与轨迹图生成",
     "tactical_analysis": "战术与统计分析",
+    "biomechanics_analysis": "骨骼动作与二维运动学分析",
     "demo_rendering": "最终分析视频渲染",
 }
 TOTAL_PIPELINE_STAGES = len(STAGE_ORDER)
@@ -59,7 +62,8 @@ STAGE_ETA_WEIGHTS = {
     "trajectory_smoothing": 0.04,
     "visualization": 0.06,
     "tactical_analysis": 0.05,
-    "demo_rendering": 0.11,
+    "biomechanics_analysis": 0.05,
+    "demo_rendering": 0.06,
 }
 
 PLAYER_COLUMNS = [
@@ -74,6 +78,18 @@ RALLY_PLAYER_COLUMNS = [
 SHUTTLE_COLUMNS = [
     "回合", "有效观测帧", "可见率", "平均图像速度(px/s)", "最高图像速度(px/s)",
     "末个有效步速度(px/s)", "平均屏幕对角线/秒",
+]
+
+ACTION_COLUMNS = [
+    "回合", "事件", "球员", "候选帧", "候选置信度", "证据", "动作分类",
+    "分类置信度", "平均支撑宽度", "身体偏移 RMS", "躯干摆动(°)",
+    "膝角差(°)", "候选帧左肘(°)", "右肘(°)", "左肩(°)", "右肩(°)",
+    "左膝(°)", "右膝(°)", "躯干倾角(°)", "窗口路径(m)", "最高步速(m/s)",
+    "回位时间(s)", "分析资格",
+]
+PHASE_COLUMNS = [
+    "回合", "事件", "球员", "阶段", "帧区间", "时长(s)", "置信度",
+    "运动侧候选", "边界证据",
 ]
 
 
@@ -126,6 +142,54 @@ def shuttle_rally_table(report: dict[str, Any]) -> list[list[str]]:
     ]
 
 
+def action_event_table(report: dict[str, Any]) -> list[list[str]]:
+    return [
+        [
+            str(row.get("rally_id", "")),
+            str(row.get("event_id", "")),
+            str(row.get("player_id", "")),
+            str(row.get("candidate_frame", "")),
+            _number(row.get("candidate_score"), 3),
+            str(row.get("evidence_source", "")),
+            str(row.get("stroke_class_zh") or "未分类"),
+            _number(row.get("classification_confidence"), 3),
+            _number(row.get("mean_support_width_ratio"), 3),
+            _number(row.get("body_support_offset_rms"), 3),
+            _number(row.get("trunk_sway_std_deg"), 2),
+            _number(row.get("mean_knee_asymmetry_deg"), 2),
+            _number(row.get("candidate_left_elbow_angle_deg"), 2),
+            _number(row.get("candidate_right_elbow_angle_deg"), 2),
+            _number(row.get("candidate_left_shoulder_angle_deg"), 2),
+            _number(row.get("candidate_right_shoulder_angle_deg"), 2),
+            _number(row.get("candidate_left_knee_angle_deg"), 2),
+            _number(row.get("candidate_right_knee_angle_deg"), 2),
+            _number(row.get("candidate_trunk_lean_deg"), 2),
+            _number(row.get("event_path_distance_m"), 2),
+            _number(row.get("max_footwork_speed_m_s"), 2),
+            _number(row.get("recovery_time_s"), 2),
+            f"稳定性:{row.get('stability_eligibility', '—')} / 步法:{row.get('footwork_eligibility', '—')}",
+        ]
+        for row in report.get("biomechanics", {}).get("events", [])
+    ]
+
+
+def swing_phase_table(report: dict[str, Any]) -> list[list[str]]:
+    return [
+        [
+            str(row.get("rally_id", "")),
+            str(row.get("event_id", "")),
+            str(row.get("player_id", "")),
+            str(row.get("phase") or row.get("phase_reject_reason", "")),
+            str(row.get("frame_interval", "")),
+            _number(row.get("duration_seconds"), 3),
+            _number(row.get("phase_confidence"), 3),
+            str(row.get("motion_side_candidate", "")),
+            str(row.get("boundary_evidence", "")),
+        ]
+        for row in report.get("biomechanics", {}).get("phases", [])
+    ]
+
+
 def report_summary_markdown(report: dict[str, Any]) -> str:
     match = report.get("match", {})
     shuttle = report.get("shuttle", {})
@@ -143,13 +207,21 @@ def report_summary_markdown(report: dict[str, Any]) -> str:
 
 def quality_markdown(report: dict[str, Any]) -> str:
     quality = report.get("quality", {})
+    biomechanics = report.get("biomechanics", {})
+    development = report.get("development", {})
     return (
         "### 指标口径与能力边界\n\n"
         f"- {quality.get('metric_contract', '')}\n"
         f"- {quality.get('body_center_contract', '')}\n"
-        f"- {quality.get('dual_side_capability', '')}\n\n"
-        "### 骨骼动作细节分析 · 正在开发中\n\n"
-        "计划加入：击球动作分类、挥拍阶段分解、关节角度与稳定性、步法与启动模式。"
+        f"- {quality.get('dual_side_capability', '')}\n"
+        f"- {quality.get('biomechanics_contract', '')}\n\n"
+        "### 骨骼动作细节分析\n\n"
+        f"- 击球候选：**{biomechanics.get('candidate_events', 0)}**\n"
+        f"- 已分类动作：**{biomechanics.get('classified_events', 0)}**\n"
+        f"- 稳定性合格事件：**{biomechanics.get('stability_eligible_events', 0)}**\n"
+        f"- 步法合格事件：**{biomechanics.get('footwork_eligible_events', 0)}**\n"
+        f"- 合格阶段记录：**{biomechanics.get('eligible_phase_rows', 0)}**\n\n"
+        f"> {development.get('bone_action_detail', '')}"
     )
 
 
@@ -346,6 +418,11 @@ def _result_files(report: dict[str, Any]) -> list[str]:
     candidates = [
         report.get("outputs", {}).get("web_report"), report.get("outputs", {}).get("tactical_summary"),
         report.get("outputs", {}).get("player_tracks"), report.get("outputs", {}).get("shuttle_tracks"),
+        report.get("outputs", {}).get("biomechanics_kinematics"),
+        report.get("outputs", {}).get("biomechanics_action_events"),
+        report.get("outputs", {}).get("biomechanics_swing_phases"),
+        report.get("outputs", {}).get("biomechanics_rally_summary"),
+        report.get("outputs", {}).get("biomechanics_match_summary"),
         report.get("outputs", {}).get("manifest"),
     ]
     return [str(path) for path in candidates if path and Path(path).is_file()]
@@ -374,7 +451,7 @@ def build_app():
         view_label: str,
         manual_reference_points: list[float] | None,
     ) -> Iterator[tuple[Any, ...]]:
-        empty = (None, "", [], [], [], "", [], [])
+        empty = (None, "", [], [], [], [], [], "", [], [], {})
         if not video_path:
             missing_state: dict[str, Any] = {"stages": []}
             yield (
@@ -464,7 +541,8 @@ def build_app():
             stage_status_markdown(state, running=False) + "\n\n### ✅ 分析完成",
             report.get("match", {}).get("analysis_video"), report_summary_markdown(report),
             player_overview_table(report), player_rally_table(report), shuttle_rally_table(report),
-            quality_markdown(report), _result_files(report), _chart_files(report),
+            action_event_table(report), swing_phase_table(report), quality_markdown(report),
+            _result_files(report), _chart_files(report), report,
         )
 
     with gr.Blocks(
@@ -615,7 +693,7 @@ def build_app():
 
         gr.HTML(
             "<header class='stage-heading'><span>03</span><div><small>PROCESS</small>"
-            "<h2>分析运行状态</h2><p>九个阶段均来自实际运行清单，不使用虚假加载进度。</p></div></header>"
+            "<h2>分析运行状态</h2><p>十个阶段均来自实际运行清单，不使用虚假加载进度。</p></div></header>"
         )
         progress_bar = gr.HTML(progress_html({"stages": []}, running=False))
         with gr.Accordion("运行日志与阶段记录", open=False, elem_classes=["stage-log"]):
@@ -657,15 +735,70 @@ def build_app():
             with gr.Tab("可视化与文件"):
                 gallery = gr.Gallery(label="轨迹、散点与热力图", columns=2, height="auto")
                 downloads = gr.Files(label="下载 JSON / CSV / Run Manifest")
-            with gr.Tab("动作分析路线图"):
-                quality = gr.Markdown(
-                    "### 骨骼动作细节分析 · 正在开发中\n\n"
-                    "计划加入击球动作分类、挥拍阶段分解、关节角度与稳定性、步法与启动模式。"
+            with gr.Tab("动作细节分析"):
+                action_events_table = gr.Dataframe(
+                    headers=ACTION_COLUMNS,
+                    datatype=["str"] * len(ACTION_COLUMNS),
+                    interactive=False,
+                    wrap=True,
+                    label="击球候选、稳定性与步法描述",
+                    elem_classes=["report-table"],
                 )
+                swing_phases_table = gr.Dataframe(
+                    headers=PHASE_COLUMNS,
+                    datatype=["str"] * len(PHASE_COLUMNS),
+                    interactive=False,
+                    wrap=True,
+                    label="挥拍阶段",
+                    elem_classes=["report-table"],
+                )
+                quality = gr.Markdown(
+                    "### 骨骼动作细节分析\n\n"
+                    "分析完成后将在此显示击球候选、挥拍阶段、二维关节与稳定性、步法描述。"
+                )
+                with gr.Group(elem_classes=["review-export"]):
+                    gr.Markdown(
+                        "### 人工复核包\n\n"
+                        "从各回合均衡抽取最多 200 个候选，生成前帧 / 候选帧 / 后帧三联图与待审核 CSV。"
+                    )
+                    review_button = gr.Button("生成动作人工复核包", variant="secondary")
+                    review_status = gr.Markdown("分析完成后可生成。")
+                    review_download = gr.File(label="下载复核包 ZIP")
+        report_state = gr.State(value={})
         outputs = [
             progress_bar, status, output_video, summary, player_overview,
-            rally_players, rally_shuttle, quality, downloads, gallery,
+            rally_players, rally_shuttle, action_events_table, swing_phases_table,
+            quality, downloads, gallery, report_state,
         ]
+
+        def build_review_package(report: dict[str, Any] | None):
+            if not report or not report.get("run_dir"):
+                raise gr.Error("请先完成一次分析。")
+            run_dir = Path(str(report["run_dir"])).resolve()
+            action_events = run_dir / "outputs" / "biomechanics" / "action_events.csv"
+            player_tracks = run_dir / "annotations" / "player_tracks_smoothed.csv"
+            if not action_events.is_file():
+                raise gr.Error("当前 Run 没有动作事件产物。")
+            review_dir = run_dir / "outputs" / "biomechanics" / "review"
+            result = export_action_event_review(
+                action_events,
+                review_dir,
+                player_tracks_csv=player_tracks if player_tracks.is_file() else None,
+                max_events=200,
+            )
+            package_path = review_dir.parent / "biomechanics_review_package.zip"
+            with zipfile.ZipFile(package_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                for path in sorted(review_dir.rglob("*")):
+                    if path.is_file():
+                        archive.write(path, path.relative_to(review_dir))
+            message = (
+                "### 复核包已生成\n\n"
+                f"- 候选：**{result['selected_events']}**\n"
+                f"- 成功图片：**{result['rendered_montages']}**\n"
+                f"- 缺图：**{result['missing_montages']}**\n\n"
+                "CSV 初始状态为 `pending`；确认后改为 `accepted` 或 `rejected`。"
+            )
+            return message, str(package_path)
         def prepare_annotation(video_path: str | None, view_label: str):
             if not video_path:
                 return (
@@ -869,6 +1002,12 @@ def build_app():
             run,
             [video, input_kind, view_kind, manual_reference_points],
             outputs,
+            concurrency_limit=1,
+        )
+        review_button.click(
+            build_review_package,
+            [report_state],
+            [review_status, review_download],
             concurrency_limit=1,
         )
     return app

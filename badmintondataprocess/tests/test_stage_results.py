@@ -7,7 +7,7 @@ import pytest
 
 import badminton_data_process.pipeline.run as pipeline_module
 from badminton_data_process.core.config import load_yaml
-from badminton_data_process.core.io import read_csv_rows, write_csv_rows
+from badminton_data_process.core.io import read_csv_rows, write_csv_rows, write_json
 from badminton_data_process.core.run import (
     RunContext,
     StageExecutionError,
@@ -59,6 +59,11 @@ def _stub_successful_pipeline(monkeypatch, project_dir: Path) -> None:
     monkeypatch.setattr(pipeline_module, "smooth_trajectory", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(pipeline_module, "visualize_tracking_main", lambda *_args: 0)
     monkeypatch.setattr(pipeline_module, "tactics_main", lambda *_args: 0)
+    monkeypatch.setattr(pipeline_module, "analyze_kinematics_csv", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(pipeline_module, "analyze_action_events_csv", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(pipeline_module, "analyze_swing_phases_csv", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(pipeline_module, "analyze_event_descriptors", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(pipeline_module, "classify_action_events_csv", lambda *_args, **_kwargs: {})
     _stub_artifact_inspection(monkeypatch)
 
 
@@ -413,5 +418,32 @@ def test_pipeline_resume_after_tracking_keeps_player_config_available(
     )
 
     stages = _manifest(tmp_path, "resume_after_tracking")["stages"]
-    assert stages[-1]["name"] == "tactical_analysis"
+    assert stages[-1]["name"] == "biomechanics_analysis"
     assert stages[-1]["status"] == "success"
+
+
+def test_legacy_completed_demo_cannot_silently_insert_biomechanics_stage(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    project_dir = Path(__file__).resolve().parents[1]
+    config = load_yaml(project_dir / "configs" / "default.yaml")
+    monkeypatch.setattr(pipeline_module, "load_config", lambda *_args, **_kwargs: config)
+    write_json(
+        tmp_path / "runs" / "legacy_demo" / "manifest.json",
+        {
+            "run_id": "legacy_demo",
+            "config": config,
+            "stages": [
+                {"name": "main_view", "status": "success"},
+                {"name": "demo_rendering", "status": "success"},
+            ],
+        },
+    )
+
+    with pytest.raises(RuntimeError, match="predates the Biomechanics Analysis stage"):
+        pipeline_module.run_pipeline(
+            input_video=tmp_path / "match.mp4",
+            run_id="legacy_demo",
+            root=tmp_path,
+        )

@@ -6,6 +6,17 @@ from pathlib import Path
 from typing import Any, Callable
 
 from badminton_data_process.calibration.court import calibrate_courts
+from badminton_data_process.analysis.biomechanics import (
+    ACTION_EVENT_FIELDS,
+    KINEMATICS_FRAME_FIELDS,
+    RALLY_SUMMARY_FIELDS,
+    SWING_PHASE_FIELDS,
+    analyze_action_events_csv,
+    analyze_event_descriptors,
+    analyze_kinematics_csv,
+    analyze_swing_phases_csv,
+    classify_action_events_csv,
+)
 from badminton_data_process.core.artifacts import (
     inspect_calibration_json,
     inspect_csv,
@@ -118,6 +129,15 @@ def run_pipeline(
             "Run manifest predates the mandatory Main View stage; use a new run_id "
             "or rerun explicitly with --force instead of reusing unconstrained rallies"
         )
+    if (
+        StageName.DEMO_RENDERING in completed
+        and StageName.BIOMECHANICS_ANALYSIS not in completed
+    ):
+        raise RuntimeError(
+            "Run manifest predates the Biomechanics Analysis stage; use a new run_id "
+            "or rerun explicitly with --force instead of inserting a stage before "
+            "an already completed demo"
+        )
 
     run_dir = layout.run_dir
     ensure_dir(layout.annotations_dir)
@@ -145,6 +165,12 @@ def run_pipeline(
     tactics_dir = ensure_dir(layout.tactics_dir)
     tactics_summary_csv = layout.tactics_summary_csv
     tactics_events_csv = layout.tactics_events_csv
+    ensure_dir(layout.biomechanics_dir)
+    kinematics_frames_csv = layout.kinematics_frames_csv
+    action_events_csv = layout.action_events_csv
+    swing_phases_csv = layout.swing_phases_csv
+    biomechanics_rally_summary_csv = layout.biomechanics_rally_summary_csv
+    biomechanics_match_summary_json = layout.biomechanics_match_summary_json
     ensure_dir(layout.demo_dir)
 
     if StageName.MAIN_VIEW not in completed:
@@ -663,6 +689,133 @@ def run_pipeline(
                 )
             )
 
+    biomechanics_cfg = cfg.biomechanics_analysis
+    if (
+        biomechanics_cfg.enabled
+        and StageName.BIOMECHANICS_ANALYSIS not in completed
+    ):
+        with stage_report(
+            context,
+            StageName.BIOMECHANICS_ANALYSIS,
+            inputs=[str(player_smoothed_csv), str(shuttle_smoothed_csv)],
+            outputs=[
+                str(kinematics_frames_csv),
+                str(action_events_csv),
+                str(swing_phases_csv),
+                str(biomechanics_rally_summary_csv),
+                str(biomechanics_match_summary_json),
+            ],
+            parameters=asdict(biomechanics_cfg),
+        ) as stage:
+            analyze_kinematics_csv(
+                player_smoothed_csv,
+                kinematics_frames_csv,
+                keypoint_threshold=biomechanics_cfg.keypoint_confidence,
+                min_keypoint_coverage_ratio=(
+                    biomechanics_cfg.min_keypoint_coverage_ratio
+                ),
+            )
+            analyze_action_events_csv(
+                player_smoothed_csv,
+                shuttle_smoothed_csv,
+                action_events_csv,
+                keypoint_threshold=biomechanics_cfg.keypoint_confidence,
+                shuttle_turn_angle_deg=biomechanics_cfg.shuttle_turn_angle_deg,
+                shuttle_proximity_ratio=biomechanics_cfg.shuttle_proximity_ratio,
+                min_shuttle_proximity_score=(
+                    biomechanics_cfg.min_shuttle_proximity_score
+                ),
+                shuttle_turn_span_observations=(
+                    biomechanics_cfg.shuttle_turn_span_observations
+                ),
+                wrist_speed_threshold_norm_s=(
+                    biomechanics_cfg.wrist_speed_threshold_norm_s
+                ),
+                min_event_gap_frames=biomechanics_cfg.min_event_gap_frames,
+                min_candidate_score=biomechanics_cfg.min_candidate_score,
+                event_pre_frames=biomechanics_cfg.event_pre_frames,
+                event_post_frames=biomechanics_cfg.event_post_frames,
+            )
+            analyze_swing_phases_csv(
+                player_smoothed_csv,
+                action_events_csv,
+                swing_phases_csv,
+                keypoint_threshold=biomechanics_cfg.keypoint_confidence,
+                min_contiguous_frames=biomechanics_cfg.min_contiguous_frames,
+                smoothing_window=biomechanics_cfg.angle_smoothing_window,
+            )
+            analyze_event_descriptors(
+                action_events_csv,
+                player_smoothed_csv,
+                kinematics_frames_csv,
+                biomechanics_rally_summary_csv,
+                biomechanics_match_summary_json,
+                keypoint_threshold=biomechanics_cfg.keypoint_confidence,
+                min_contiguous_frames=biomechanics_cfg.min_contiguous_frames,
+                enable_far_player=biomechanics_cfg.enable_far_player,
+            )
+            if biomechanics_cfg.classification_backend == "bst":
+                classify_action_events_csv(
+                    action_events_csv,
+                    player_smoothed_csv,
+                    shuttle_smoothed_csv,
+                    repository=_artifact_path(
+                        biomechanics_cfg.bst_repository, project_root
+                    ),
+                    weights=_artifact_path(
+                        biomechanics_cfg.bst_weights, project_root
+                    ),
+                    device=biomechanics_cfg.bst_device,
+                    model_name=biomechanics_cfg.bst_model_name,
+                    pose_style=biomechanics_cfg.bst_pose_style,
+                    seq_len=biomechanics_cfg.bst_seq_len,
+                    num_classes=biomechanics_cfg.bst_num_classes,
+                    keypoint_threshold=biomechanics_cfg.keypoint_confidence,
+                    min_confidence=biomechanics_cfg.bst_min_confidence,
+                )
+            stage.require_artifact(
+                inspect_csv(
+                    kinematics_frames_csv,
+                    name="biomechanics kinematics frames",
+                    min_rows=1,
+                    required_fields=KINEMATICS_FRAME_FIELDS,
+                )
+            )
+            stage.require_artifact(
+                inspect_csv(
+                    action_events_csv,
+                    name="biomechanics action candidates",
+                    min_rows=0,
+                    required_fields=ACTION_EVENT_FIELDS,
+                )
+            )
+            stage.require_artifact(
+                inspect_csv(
+                    swing_phases_csv,
+                    name="biomechanics swing phases",
+                    min_rows=0,
+                    required_fields=SWING_PHASE_FIELDS,
+                )
+            )
+            stage.require_artifact(
+                inspect_csv(
+                    biomechanics_rally_summary_csv,
+                    name="biomechanics rally summary",
+                    min_rows=0,
+                    required_fields=RALLY_SUMMARY_FIELDS,
+                )
+            )
+            stage.require_artifact(
+                inspect_file(
+                    biomechanics_match_summary_json,
+                    name="biomechanics match summary",
+                )
+            )
+
+    if stop_after == "biomechanics":
+        context.write_manifest()
+        return run_dir
+
     demo_cfg = cfg.demo_rendering
     demo_output = layout.demo_output(demo_cfg.output_filename)
     demo_intermediate = layout.demo_intermediate_output(demo_cfg.output_filename)
@@ -677,6 +830,8 @@ def run_pipeline(
                 str(calibration_dir),
                 str(tactics_events_csv),
                 str(tactics_summary_csv),
+                str(action_events_csv),
+                str(swing_phases_csv),
             ],
             outputs=[str(demo_intermediate), str(demo_output)],
             parameters=asdict(demo_cfg),
@@ -689,6 +844,8 @@ def run_pipeline(
                 calibration_dir=calibration_dir,
                 tactics_events_csv=tactics_events_csv,
                 tactics_summary_csv=tactics_summary_csv,
+                action_events_csv=action_events_csv,
+                swing_phases_csv=swing_phases_csv,
                 output_video=render_target,
                 max_rallies=demo_cfg.max_rallies,
                 trail_length=demo_cfg.trail_length,
@@ -732,7 +889,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--stop-after",
-        choices=["main_view", "rally", "calibrate", "tracking"],
+        choices=["main_view", "rally", "calibrate", "tracking", "biomechanics"],
         default=None,
     )
     parser.add_argument("--skip-visualize", action="store_true")

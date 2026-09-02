@@ -9,20 +9,35 @@ description = "Broadcast badminton video preprocessing, tracking, and tactical a
 readme = "md_summary/README.md"
 requires-python = ">=3.10"
 dependencies = [
-  "numpy>=1.24",
-  "opencv-python>=4.8",
+  "numpy>=2.4,<3",
+  "opencv-python>=5.0,<5.1",
   "yt-dlp>=2025.1.15",
   "imageio-ffmpeg>=0.6",
-  "scipy>=1.11",
+  "imageio>=2.37,<3",
+  "scipy>=1.18,<2",
   "ultralytics>=8.3",
-  "matplotlib>=3.8",
+  "matplotlib>=3.11,<4",
+  "pandas>=2.3,<3",
+  "PyYAML>=6.0,<7",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
-yaml = ["PyYAML>=6.0"]
 ui = ["gradio>=5.0,<6"]
-pose = ["rtmlib>=0.0.1", "onnxruntime>=1.18"]
+pose-gpu = ["onnxruntime-gpu==1.29.0"]
+biomechanics = [
+  "scikit-learn>=1.8,<1.9",
+  "seaborn>=0.13,<0.14",
+  "openpyxl>=3.1,<4",
+  "moviepy>=2.2,<3",
+  "transformers>=4.57,<5",
+  "torcheval>=0.0.7,<0.1",
+  "einops>=0.8,<0.9",
+  "parse>=1.22,<2",
+  "positional-encodings>=6.0,<7",
+  "torchinfo>=1.8,<2",
+  "gdown>=5.2,<6",
+]
 
 [project.scripts]
 bdp = "badminton_data_process.cli:main"

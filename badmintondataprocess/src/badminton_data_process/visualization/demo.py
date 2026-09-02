@@ -313,6 +313,57 @@ def _draw_events(
     _draw_label(frame, f"{event_type}  {player_id}", (14, 58), color, 0.7)
 
 
+def _draw_biomechanics(
+    frame,
+    frame_id: int,
+    action_events: list[dict[str, str]],
+    swing_phases: list[dict[str, str]],
+    event_hold_frames: int,
+) -> None:
+    active_event = None
+    for event in action_events:
+        candidate = parse_int(event.get("candidate_frame"))
+        if candidate is not None and abs(frame_id - candidate) <= event_hold_frames:
+            active_event = event
+    active_phase = None
+    for phase in swing_phases:
+        start = parse_int(phase.get("start_frame"))
+        end = parse_int(phase.get("end_frame"))
+        if (
+            phase.get("phase_eligibility") == "eligible"
+            and start is not None
+            and end is not None
+            and start <= frame_id < end
+        ):
+            active_phase = phase
+            break
+    if active_event is not None:
+        player = active_event.get("player_id", "")
+        score = parse_float(active_event.get("candidate_score"))
+        stroke = (
+            active_event.get("stroke_class", "")
+            if active_event.get("classification_eligibility") == "eligible"
+            else "stroke candidate"
+        )
+        score_text = f" {score:.2f}" if score is not None else ""
+        _draw_label(
+            frame,
+            f"ACTION  {player}  {stroke}{score_text}",
+            (14, 88),
+            PLAYER_COLORS.get(player, (255, 255, 255)),
+            0.55,
+        )
+    if active_phase is not None:
+        side = active_phase.get("motion_side_candidate", "")
+        _draw_label(
+            frame,
+            f"PHASE  {active_phase.get('phase', '')}  motion-side:{side}",
+            (14, 116),
+            (120, 255, 220),
+            0.52,
+        )
+
+
 def _draw_stats(
     frame,
     stats: dict[str, dict[str, str]],
@@ -479,6 +530,8 @@ def render_demo(
     output_video: Path,
     tactics_events_csv: Path | None = None,
     tactics_summary_csv: Path | None = None,
+    action_events_csv: Path | None = None,
+    swing_phases_csv: Path | None = None,
     max_rallies: int | None = None,
     trail_length: int = 18,
     event_hold_frames: int = 15,
@@ -511,6 +564,8 @@ def render_demo(
     shuttles = group_rows_by_rally(read_csv_rows(shuttle_tracks_csv))
     events = group_rows_by_rally(read_csv_rows(tactics_events_csv)) if tactics_events_csv else {}
     summaries = group_rows_by_rally(read_csv_rows(tactics_summary_csv)) if tactics_summary_csv else {}
+    action_events = group_rows_by_rally(read_csv_rows(action_events_csv)) if action_events_csv else {}
+    swing_phases = group_rows_by_rally(read_csv_rows(swing_phases_csv)) if swing_phases_csv else {}
 
     first_capture = cv2.VideoCapture(str(selected[0][1]))
     if not first_capture.isOpened():
@@ -541,6 +596,8 @@ def render_demo(
             player_frames = index_rows_by_frame(_rally_rows(players, video_stem, rally_id), "player_id")
             shuttle_frames = index_rows_by_frame(_rally_rows(shuttles, video_stem, rally_id))
             event_rows = _rally_rows(events, video_stem, rally_id)
+            action_rows = _rally_rows(action_events, video_stem, rally_id)
+            phase_rows = _rally_rows(swing_phases, video_stem, rally_id)
             stat_rows = {
                 row.get("player_id", ""): row
                 for row in _rally_rows(summaries, video_stem, rally_id)
@@ -586,6 +643,13 @@ def render_demo(
                     scale_x,
                     scale_y,
                 )
+                _draw_biomechanics(
+                    frame,
+                    frame_id,
+                    action_rows,
+                    phase_rows,
+                    event_hold_frames,
+                )
                 if show_stats and should_show_full_rally_summary(frame_id, total_frames):
                     _draw_stats(frame, stat_rows, rally_id, rally_index, len(selected))
                 if show_topdown:
@@ -620,6 +684,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--calibration-dir", type=Path, required=True)
     parser.add_argument("--tactics-events-csv", type=Path, default=None)
     parser.add_argument("--tactics-summary-csv", type=Path, default=None)
+    parser.add_argument("--action-events-csv", type=Path, default=None)
+    parser.add_argument("--swing-phases-csv", type=Path, default=None)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--max-rallies", type=int, default=None)
     parser.add_argument("--trail-length", type=int, default=18)
@@ -639,6 +705,8 @@ def main(argv: list[str] | None = None) -> int:
         calibration_dir=args.calibration_dir,
         tactics_events_csv=args.tactics_events_csv,
         tactics_summary_csv=args.tactics_summary_csv,
+        action_events_csv=args.action_events_csv,
+        swing_phases_csv=args.swing_phases_csv,
         output_video=args.output,
         max_rallies=args.max_rallies,
         trail_length=args.trail_length,

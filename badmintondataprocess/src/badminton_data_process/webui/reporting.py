@@ -232,6 +232,17 @@ def build_web_report(run_dir: Path) -> dict[str, Any]:
     player_rows = read_csv_rows(run_dir / "annotations" / "player_tracks_smoothed.csv")
     shuttle_rows = read_csv_rows(run_dir / "annotations" / "shuttle_tracks_smoothed.csv")
     rally_rows = read_csv_rows(run_dir / "rallies.csv")
+    biomechanics_dir = run_dir / "outputs" / "biomechanics"
+    kinematics_rows = read_csv_rows(biomechanics_dir / "kinematics_frames.csv")
+    action_events = read_csv_rows(biomechanics_dir / "action_events.csv")
+    swing_phases = read_csv_rows(biomechanics_dir / "swing_phases.csv")
+    biomechanics_rallies = read_csv_rows(
+        biomechanics_dir / "biomechanics_rally_summary.csv"
+    )
+    biomechanics_match_path = biomechanics_dir / "biomechanics_match_summary.json"
+    biomechanics_match = (
+        read_json(biomechanics_match_path) if biomechanics_match_path.is_file() else {}
+    )
     analysis_video = Path(summary.get("outputs", {}).get("analysis_video", ""))
     frame_diagonal = _video_diagonal(analysis_video)
 
@@ -320,10 +331,39 @@ def build_web_report(run_dir: Path) -> dict[str, Any]:
             "metric_contract": "Player movement uses validated court-plane metres. Shuttle speed is image-plane only because an airborne shuttle cannot be projected to the ground plane as a physical speed.",
             "body_center_contract": "Body-center height is a 2-D pose estimate normalized by the person bounding-box height; it is not a 3-D centre-of-mass height in metres.",
             "dual_side_capability": "near/far are court-side roles; dual-side tactical conclusions remain experimental.",
+            "biomechanics_contract": "Joint angles, swing phases, stability and footwork are evidence-gated 2-D descriptors. They are not 3-D joint angles, force estimates, medical diagnosis, or absolute coaching grades.",
+        },
+        "biomechanics": {
+            "available": bool(kinematics_rows or action_events or swing_phases),
+            "kinematics_rows": len(kinematics_rows),
+            "kinematics_eligible_rows": sum(
+                row.get("kinematics_eligibility") == "eligible"
+                for row in kinematics_rows
+            ),
+            "candidate_events": len(action_events),
+            "classified_events": sum(
+                row.get("classification_eligibility") == "eligible"
+                for row in action_events
+            ),
+            "stability_eligible_events": sum(
+                row.get("stability_eligibility") == "eligible"
+                for row in action_events
+            ),
+            "footwork_eligible_events": sum(
+                row.get("footwork_eligibility") == "eligible"
+                for row in action_events
+            ),
+            "eligible_phase_rows": sum(
+                row.get("phase_eligibility") == "eligible" for row in swing_phases
+            ),
+            "events": action_events,
+            "phases": swing_phases,
+            "rallies": biomechanics_rallies,
+            "match_summary": biomechanics_match,
         },
         "development": {
-            "bone_action_detail": "正在开发中",
-            "planned_items": ["击球动作分类", "挥拍阶段分解", "关节角度与稳定性", "步法与启动模式"],
+            "bone_action_detail": "二维动作分析基础版已上线；BST 击球分类需另行配置官方权重。",
+            "planned_items": ["持拍手与球拍关键点", "三维多机位标定", "经标注验证的动作质量评分"],
         },
         "outputs": {
             **summary.get("outputs", {}),

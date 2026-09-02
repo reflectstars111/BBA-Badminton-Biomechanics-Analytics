@@ -430,6 +430,7 @@ class StageName(str, Enum):
     TRAJECTORY_SMOOTHING = "trajectory_smoothing"
     VISUALIZATION = "visualization"
     TACTICAL_ANALYSIS = "tactical_analysis"
+    BIOMECHANICS_ANALYSIS = "biomechanics_analysis"
     DEMO_RENDERING = "demo_rendering"
 
 

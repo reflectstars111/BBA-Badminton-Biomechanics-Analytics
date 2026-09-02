@@ -7,9 +7,12 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$env:PYTHONNOUSERSITE = "1"
 $repositoryRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $pipelineRoot = Join-Path $repositoryRoot "badmintondataprocess"
-$environmentFile = Join-Path $pipelineRoot "environment.yml"
+$runtimeSetup = Join-Path $repositoryRoot "setup_runtime.ps1"
+$bstRepository = Join-Path $repositoryRoot "third_party\BST-Badminton-Stroke-type-Transformer"
+$bstWeights = Join-Path $repositoryRoot "weights\bst\bst_AP_JnB_bone_train_partial_0p25_merged_2.pt"
 
 if (-not (Get-Command conda -ErrorAction SilentlyContinue)) {
     throw "Conda was not found. Install Miniconda, reopen PowerShell, then run this script again."
@@ -29,45 +32,17 @@ function Resolve-WebUiPython {
 
 $pythonPath = Resolve-WebUiPython
 if (-not $pythonPath) {
-    Write-Host "Creating the good-badminton Conda environment. This is required only once..." -ForegroundColor Cyan
-    Push-Location $pipelineRoot
-    try {
-        & conda env create -f $environmentFile
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to create the good-badminton Conda environment."
-        }
-    }
-    finally {
-        Pop-Location
+    throw "Python was not found in the existing good-badminton Conda environment. Run setup_runtime.ps1 after restoring that environment."
+}
+
+& $pythonPath -m badminton_data_process.cli verify --profile production --strict --bst-repository $bstRepository --bst-weights $bstWeights 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "The production runtime is incomplete. Repairing the existing good-badminton environment..." -ForegroundColor Cyan
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $runtimeSetup
+    if ($LASTEXITCODE -ne 0) {
+        throw "The complete BBA runtime could not be installed or verified."
     }
     $pythonPath = Resolve-WebUiPython
-}
-if (-not $pythonPath) {
-    throw "Python was not found in the good-badminton Conda environment."
-}
-
-& $pythonPath -c "import gradio, badminton_data_process; major=int(gradio.__version__.split('.')[0]); assert major == 5, f'unsupported Gradio {gradio.__version__}'" 2>$null
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Installing the WebUI package into the existing environment..." -ForegroundColor Cyan
-    Push-Location $pipelineRoot
-    try {
-        & $pythonPath -m pip install -e ".[ui,yaml]"
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to install the WebUI dependencies."
-        }
-    }
-    finally {
-        Pop-Location
-    }
-}
-
-& $pythonPath -c "import rtmlib" 2>$null
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Installing RTMPose without replacing onnxruntime-gpu..." -ForegroundColor Cyan
-    & $pythonPath -m pip install rtmlib==0.0.16 --no-deps
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to install RTMPose."
-    }
 }
 
 $arguments = @(

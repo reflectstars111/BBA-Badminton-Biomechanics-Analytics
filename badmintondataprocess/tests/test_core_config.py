@@ -22,11 +22,15 @@ def test_load_default_config_contains_pipeline_sections() -> None:
     assert config["player_tracking"]["rtmpose_mode"] == "balanced"
     assert config["court_calibration"]["detector"] == "contour"
     assert config["demo_rendering"]["output_filename"] == "badminton_analysis_demo.mp4"
+    assert config["biomechanics_analysis"]["classification_backend"] == "none"
+    assert config["biomechanics_analysis"]["bst_repository"].startswith("../third_party/")
+    assert config["biomechanics_analysis"]["bst_weights"].startswith("../weights/bst/")
     parsed = parse_config(config)
     assert parsed.main_view.threshold == 0.75
     assert parsed.main_view.max_reject_score == 0.4
     assert parsed.court_calibration.min_stable_candidates == 2
     assert parsed.demo_rendering.enabled is True
+    assert parsed.biomechanics_analysis.enabled is True
 
 
 def test_deep_merge_keeps_nested_defaults() -> None:
@@ -134,6 +138,9 @@ def test_run_layout_resolves_custom_runs_dir_and_owns_artifact_paths(tmp_path) -
     assert layout.annotations_dir == layout.run_dir / "annotations"
     assert layout.player_tracks_csv == layout.annotations_dir / "player_tracks.csv"
     assert layout.tactics_events_csv == layout.outputs_dir / "tactics" / "tactics_events.csv"
+    assert layout.kinematics_frames_csv == (
+        layout.outputs_dir / "biomechanics" / "kinematics_frames.csv"
+    )
     assert layout.demo_output("demo.mp4") == layout.outputs_dir / "demo" / "demo.mp4"
 
 

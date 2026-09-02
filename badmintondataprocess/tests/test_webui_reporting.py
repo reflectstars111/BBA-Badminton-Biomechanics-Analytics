@@ -6,6 +6,7 @@ import pytest
 
 from badminton_data_process.core.io import write_csv_rows, write_json
 from badminton_data_process.webui.app import (
+    action_event_table,
     build_app,
     duration_label,
     estimate_remaining_seconds,
@@ -15,6 +16,7 @@ from badminton_data_process.webui.app import (
     progress_html,
     quality_markdown,
     shuttle_rally_table,
+    swing_phase_table,
 )
 from badminton_data_process.webui.reporting import build_web_report
 from badminton_data_process.webui.styles import WEBUI_CSS
@@ -41,7 +43,7 @@ def test_report_tables_and_stage_codes_pin_a_light_high_contrast_palette() -> No
         for component in config["components"]
         if component["type"] == "dataframe"
     ]
-    assert len(report_tables) == 3
+    assert len(report_tables) == 5
     assert all(
         component["props"].get("elem_classes") == ["report-table"]
         for component in report_tables
@@ -119,13 +121,15 @@ def test_web_report_exposes_detailed_trustworthy_match_and_rally_metrics(tmp_pat
     assert near["average_body_center_height_ratio"] == pytest.approx(0.417, abs=0.001)
     assert report["shuttle"]["average_image_speed_px_s"] == pytest.approx(100.0)
     assert report["quality"]["metric_contract"].startswith("Player movement")
-    assert report["development"]["bone_action_detail"] == "正在开发中"
+    assert report["development"]["bone_action_detail"].startswith("二维动作分析基础版已上线")
     assert (run_dir / "webui_report.json").is_file()
 
     assert player_overview_table(report)[0][0] == "far"
     assert len(player_rally_table(report)) == 2
     assert shuttle_rally_table(report)[0][3] == "100.0"
-    assert "正在开发中" in quality_markdown(report)
+    assert "骨骼动作细节分析" in quality_markdown(report)
+    assert action_event_table(report) == []
+    assert swing_phase_table(report) == []
 
 
 def test_pipeline_progress_reports_current_stage_from_manifest() -> None:
@@ -140,15 +144,15 @@ def test_pipeline_progress_reports_current_stage_from_manifest() -> None:
 
     assert progress == {
         "completed": 2,
-        "total": 9,
-        "percent": 22,
+        "total": 10,
+        "percent": 20,
         "current_stage": "白色边线与球场标定",
         "state_label": "正在分析",
         "failed": False,
     }
     html = progress_html(state, running=True)
-    assert 'value="22"' in html
-    assert "已完成 2 / 9 阶段" in html
+    assert 'value="20"' in html
+    assert "已完成 2 / 10 阶段" in html
 
 
 def test_pipeline_progress_distinguishes_finalizing_complete_and_failure() -> None:
@@ -157,7 +161,7 @@ def test_pipeline_progress_distinguishes_finalizing_complete_and_failure() -> No
         for name in (
             "main_view", "rally_segmentation", "court_calibration", "player_tracking",
             "shuttle_tracking", "trajectory_smoothing", "visualization",
-            "tactical_analysis", "demo_rendering",
+            "tactical_analysis", "biomechanics_analysis", "demo_rendering",
         )
     ]
     assert pipeline_progress({"stages": successful_stages}, running=True)["percent"] == 99
@@ -174,7 +178,7 @@ def test_pipeline_progress_distinguishes_finalizing_complete_and_failure() -> No
         },
         running=False,
     )
-    assert failed["percent"] == 11
+    assert failed["percent"] == 10
     assert failed["current_stage"] == "有效回合切分"
     assert failed["state_label"] == "分析失败"
 

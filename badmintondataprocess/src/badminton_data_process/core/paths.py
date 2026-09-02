@@ -128,6 +128,10 @@ class RunLayout:
         return self.outputs_dir / "tactics"
 
     @property
+    def biomechanics_dir(self) -> Path:
+        return self.outputs_dir / "biomechanics"
+
+    @property
     def demo_dir(self) -> Path:
         return self.outputs_dir / "demo"
 
@@ -202,6 +206,26 @@ class RunLayout:
     @property
     def tactics_events_csv(self) -> Path:
         return self.tactics_dir / "tactics_events.csv"
+
+    @property
+    def kinematics_frames_csv(self) -> Path:
+        return self.biomechanics_dir / "kinematics_frames.csv"
+
+    @property
+    def action_events_csv(self) -> Path:
+        return self.biomechanics_dir / "action_events.csv"
+
+    @property
+    def swing_phases_csv(self) -> Path:
+        return self.biomechanics_dir / "swing_phases.csv"
+
+    @property
+    def biomechanics_rally_summary_csv(self) -> Path:
+        return self.biomechanics_dir / "biomechanics_rally_summary.csv"
+
+    @property
+    def biomechanics_match_summary_json(self) -> Path:
+        return self.biomechanics_dir / "biomechanics_match_summary.json"
 
     def demo_output(self, filename: str) -> Path:
         if not filename or Path(filename).name != filename:

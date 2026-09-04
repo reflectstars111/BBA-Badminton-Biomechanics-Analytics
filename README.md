@@ -2,7 +2,7 @@
 
 **把一段普通比赛视频，转化为可观看、可量化、可复核的羽毛球运动表现报告。**
 
-[中文](README.md) · [English](README_EN.md)
+[中文](README.md) · [English](README_EN.md) · [一页倡议书](BBA_INITIATIVE_ZH.md) · [项目简介与合作计划](PROJECT_BRIEF_ZH.md)
 
 BBA（Badminton Biomechanics Analytics）是一套面向羽毛球训练、科研与比赛复盘的本地视频分析系统。上传完整转播或已经裁切好的比赛片段，选择俯视角或低视角，确认一次球场标定，系统即可自动完成有效回合清洗、双端球员骨骼追踪、羽毛球轨迹分析、标准球场映射和数据报告生成。
 
